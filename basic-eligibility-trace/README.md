@@ -2,10 +2,12 @@
 
 This section only uses the most fundamental eligibility trace, to an actor-critic architecture which uses function approximators  to policy and value function.
 
-![Continuous Mountain Car, MLP with eligibility traces](expr_cmc.png)
+<img src="expr_cmc.png" width="200">
+Continuous Mountain Car, MLP with eligibility traces
 The weird thing is the undiscounted episodic reward keeps dropping as new episodes coming in. I haven't quite figured it out yet.
 
-![Continuous Mountain Car, two layers FNN with eligibility traces and rely activation function](expr_cmc_nonlinear.png)
+<img src="expr_cmc_nonlinear.png" width="200">
+Continuous Mountain Car, two layers FNN with eligibility traces and rely activation function
 
 Some observations:
 * Setting lambda to 0.4 and discount factor to near 1 have yielded the best performance in the continuous mountain car problem, as observed so far.
