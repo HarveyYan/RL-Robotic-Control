@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 class Policy:
 
-    def __init__(self, obs_dim, act_dim, action_space, discount=1.0, lamb=0.4):
+    def __init__(self, obs_dim, act_dim, action_space, discount=1.0, lamb=0.8):
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.action_space = action_space
@@ -43,39 +43,38 @@ class Policy:
         self.act_ph = tf.placeholder(tf.float32, (None, self.act_dim), 'act')
 
     def _policy_nn_mu(self):
-        # out = tf.layers.dense(self.obs_ph, units,
-        #                       kernel_initializer=tf.random_normal_initializer(
-        #                           stddev=np.sqrt(1 / self.obs_dim)),
-        #                       name = 'dense_mu_1')
+        out = tf.layers.dense(self.obs_ph, self.obs_dim, tf.nn.relu,
+                              kernel_initializer=tf.random_normal_initializer(
+                                  stddev=np.sqrt(1 / self.obs_dim)),
+                              name = 'dense_mu_1')
         # out = tf.layers.dense(out, units,
         #                       kernel_initializer=tf.random_normal_initializer(
         #                           stddev=np.sqrt(1 / units)),name='dense_mu_2')
-        out = tf.layers.dense(self.obs_ph, self.act_dim, #tf.tanh,
+        out = tf.layers.dense(out, self.act_dim, #tf.tanh,
                               kernel_initializer=tf.random_normal_initializer(
                                   stddev=np.sqrt(1 / self.obs_dim)),
                               name='output_mu')
-        self.means = out # tf.Print(out, [out], message='Mean: ', summarize=100)
+        self.means = out
+        # tf.Print(out, [out], message='Mean: ', summarize=100)
 
     def _policy_nn_sigma(self):
-        # out = tf.layers.dense(self.obs_ph, units,
-        #                       kernel_initializer=tf.random_normal_initializer(
-        #                           stddev=np.sqrt(1 / self.obs_dim)),
-        #                       name='dense_sigma_1')
+        out = tf.layers.dense(self.obs_ph, self.obs_dim, tf.nn.relu,
+                              kernel_initializer=tf.random_normal_initializer(
+                                  stddev=np.sqrt(1 / self.obs_dim)),
+                              name='dense_sigma_1')
         # out = tf.layers.dense(out, units,
         #                       kernel_initializer=tf.random_normal_initializer(
         #                           stddev=np.sqrt(1 / units)), name='dense_sigma_2')
-        out = tf.layers.dense(self.obs_ph, self.act_dim, tf.tanh,
+        out = tf.layers.dense(out, self.act_dim,
                               kernel_initializer=tf.random_normal_initializer(
                                   stddev=np.sqrt(1 / self.obs_dim)),
                               name='output_sigma')
-        # assuming a diagonal covariance for the multi-variate gaussian distributionlogvar_speed = (10 * hid3_size) // 48
+
+        # assuming a diagonal covariance for the multi-variate gaussian distributionl
         self.log_vars = out
 
-        # self.log_vars = tf.get_variable('variance', (self.act_dim), tf.float32)
-        # self.log_vars = tf.Print(self.log_vars, [self.log_vars], message='log var: ')
 
     def _log_prob(self):
-        # add time dim to log_var?
         self.logp = -0.5 * (tf.reduce_sum(self.log_vars) + self.act_dim*tf.log(2*np.pi))  # probability of a trajectory
         self.logp += -0.5 * tf.reduce_sum(tf.square(self.act_ph - self.means) /
                                           tf.exp(self.log_vars), axis=1)
@@ -105,7 +104,7 @@ class Policy:
         # self.loss -= 1e-1 * self.normal_dist.entropy()
 
     def _trace(self):
-        self.optimizer = tf.train.AdamOptimizer(1e-3)
+        self.optimizer = tf.train.AdamOptimizer(1e-5)
         self.grads = self.optimizer.compute_gradients(self.loss, tf.trainable_variables())
         self.identity_update = [self.identity.assign(self.identity*self.discount)]
         # self.identity = tf.Print(self.identity, [self.identity], message ='identity: ')
@@ -230,15 +229,15 @@ class l2TargetValueFunc:
             self.obs_ph = tf.placeholder(tf.float32, (None, self.obs_dim), 'obs_ph')
             self.val_ph = tf.placeholder(tf.float32, (None,), 'advantages_ph')
 
-            # out = tf.layers.dense(self.obs_ph, units, tf.nn.relu,
-            #                       kernel_initializer=tf.random_normal_initializer(
-            #                         stddev=np.sqrt(1 / self.obs_dim)),
-            #                       name="valfunc_d1")
+            out = tf.layers.dense(self.obs_ph, self.obs_dim, tf.nn.relu,
+                                  kernel_initializer=tf.random_normal_initializer(
+                                    stddev=np.sqrt(1 / self.obs_dim)),
+                                  name="valfunc_d1")
             # out = tf.layers.dense(out, units,
             #                       kernel_initializer=tf.random_normal_initializer(
             #                           stddev=np.sqrt(1 / units)),
             #                       name="valfunc_d2")
-            out = tf.layers.dense(self.obs_ph, 1,
+            out = tf.layers.dense(out, 1,
                                   kernel_initializer=tf.random_normal_initializer(
                                       stddev=np.sqrt(1 / self.obs_dim)),
                                   name='output')
@@ -308,7 +307,7 @@ class Experiment:
         print('action dimension:', self.act_dim)
 
         # featurizer!
-        observation_examples = np.array([self.env.observation_space.sample() for x in range(10000)])
+        observation_examples = np.array([self.env.observation_space.sample() for x in range(100000)])
         self.scaler = sklearn.preprocessing.StandardScaler()
         self.scaler.fit(observation_examples)
 
@@ -340,7 +339,7 @@ class Experiment:
         done = False
         step = 0
         while not done:
-            # self.env.render()
+            self.env.render()
 
             # print('samping')
             action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
@@ -370,6 +369,37 @@ class Experiment:
             step += 0.001
 
         return rewards
+
+def exp_whole_trace():
+    env = Experiment('MountainCarContinuous-v0')
+
+    steps = []
+    undiscounted = []
+    # 100 episodes
+    for i in range(100):
+        # trace vectors are emptied at the beginning of each episode
+        env.policy.sess.run(env.policy.trace_zero)
+        env.value_func.sess.run(env.value_func.trace_zero)
+        env.policy.sess.run(env.policy.identity_init)
+        env.value_func.sess.run(env.value_func.identity_init)
+
+        print('episode: ', i)
+        rewards = env.run_one_epsisode()
+        total_steps = len(rewards)
+        print('total steps: {0}, episode_reward: {1}'.format(total_steps, np.sum(rewards)))
+        steps.append(total_steps)
+        undiscounted.append(np.sum(rewards))
+
+    plt.subplot(121)
+    plt.xlabel('episode')
+    plt.ylabel('steps')
+    plt.plot(steps)
+
+    plt.subplot(122)
+    plt.xlabel('episode')
+    plt.ylabel('undiscounted rewards')
+    plt.plot(undiscounted)
+    plt.show()
 
 class l2Experiment:
 
@@ -448,41 +478,10 @@ class l2Experiment:
 
         return rewards
 
-def exp_whole_trace():
-    env = Experiment('MountainCarContinuous-v0')
-
-    steps = []
-    undiscounted = []
-    # 100 episodes
-    for i in range(1000):
-        # trace vectors are emptied at the beginning of each episode
-        env.policy.sess.run(env.policy.trace_zero)
-        env.value_func.sess.run(env.value_func.trace_zero)
-        env.policy.sess.run(env.policy.identity_init)
-        env.value_func.sess.run(env.value_func.identity_init)
-
-        print('episode: ', i)
-        rewards = env.run_one_epsisode()
-        total_steps = len(rewards)
-        print('total steps: {0}, episode_reward: {1}'.format(total_steps, np.sum(rewards)))
-        steps.append(total_steps)
-        undiscounted.append(np.sum(rewards))
-
-    plt.subplot(121)
-    plt.xlabel('episode')
-    plt.ylabel('steps')
-    plt.plot(steps)
-
-    plt.subplot(122)
-    plt.xlabel('episode')
-    plt.ylabel('undiscounted rewards')
-    plt.plot(undiscounted)
-    plt.show()
-
 def exp_l2_trace():
     """
-    failed; l2 target should really be MC return
-    :return:
+    failed; l2 target should really have some MC return instead of bootstraped value estimation.
+    :return: disappointment
     """
     env = l2Experiment('MountainCarContinuous-v0')
     # env.policy.lamb = 0
