@@ -1,9 +1,6 @@
 import tensorflow as tf
 import numpy as np
 import gym
-import sklearn.pipeline
-import sklearn.preprocessing
-from sklearn.kernel_approximation import RBFSampler
 import matplotlib.pyplot as plt
 
 class Policy:
