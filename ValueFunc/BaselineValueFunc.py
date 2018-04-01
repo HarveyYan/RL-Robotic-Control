@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 import os
 
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+
 class ValueFunc:
     def __init__(self, obs_dim, discount=1.0, lamb=0.4):
         self.obs_dim = obs_dim
@@ -49,7 +51,7 @@ class ValueFunc:
                 [(self.trace[i], grad[1]) for i, grad in enumerate(self.grads)])
             self.init = tf.global_variables_initializer()
             self.saver = tf.train.Saver()
-        self.sess = tf.Session(graph=self.g)
+        self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
         self.sess.run(self.init)
 
     def update(self, observes, advantages):

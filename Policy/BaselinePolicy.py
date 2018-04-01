@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 import os
 
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+
 class Policy:
 
     def __init__(self, obs_dim, act_dim, action_space, discount=1.0, lamb=0.8):
@@ -99,7 +101,7 @@ class Policy:
             [(self.trace[i], grad[1]) for i, grad in enumerate(self.grads)])
 
     def _init_session(self):
-        self.sess = tf.Session(graph=self.g)
+        self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
         self.sess.run(self.init)
 
     def get_sample(self, obs):
