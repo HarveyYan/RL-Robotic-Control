@@ -2,10 +2,15 @@ import tensorflow as tf
 import numpy as np
 import gym
 import matplotlib.pyplot as plt
+import sklearn.preprocessing
+import os
+import datetime
+
+OUTPATH = './Results/cmc/' + str(datetime.datetime.now()).split('.')[0].replace(':', '_').replace(' ', '_') + '/'
 
 class Policy:
 
-    def __init__(self, obs_dim, act_dim, action_space, discount=1.0, lamb=0.4):
+    def __init__(self, obs_dim, act_dim, action_space, discount=1.0, lamb=0.8):
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.action_space = action_space
@@ -27,6 +32,7 @@ class Policy:
             self._loss()
             self._trace()
             self._train()
+            self.saver = tf.train.Saver()
             self.init = tf.global_variables_initializer()
 
     def _placeholders(self):
@@ -39,41 +45,27 @@ class Policy:
         self.act_ph = tf.placeholder(tf.float32, (None, self.act_dim), 'act')
 
     def _policy_nn_mu(self):
-        units = self.obs_dim * 10
-        # out = tf.layers.dense(self.obs_ph, units,
-        #                       kernel_initializer=tf.random_normal_initializer(
-        #                           stddev=np.sqrt(1 / self.obs_dim)),
-        #                       name = 'dense_mu_1')
-        # out = tf.layers.dense(out, units,
-        #                       kernel_initializer=tf.random_normal_initializer(
-        #                           stddev=np.sqrt(1 / units)),name='dense_mu_2')
-        out = tf.layers.dense(self.obs_ph, self.act_dim,
-                              kernel_initializer=tf.random_normal_initializer(
-                                  stddev=np.sqrt(1 / self.obs_dim)),
+        units = 10 * self.obs_dim
+        out = tf.layers.dense(self.obs_ph, units, tf.nn.relu,
+                              kernel_initializer=tf.zeros_initializer(),
+                              name='dense_mu_1')
+        out = tf.layers.dense(out, self.act_dim,  # tf.tanh,
+                              kernel_initializer=tf.zeros_initializer(),
                               name='output_mu')
-        self.means = out # tf.Print(out, [out], message='Mean: ', summarize=100)
+        self.means = out# tf.Print(out, [out], message='Mean: ', summarize=100)
 
     def _policy_nn_sigma(self):
         units = self.obs_dim * 10
-        # out = tf.layers.dense(self.obs_ph, units,
-        #                       kernel_initializer=tf.random_normal_initializer(
-        #                           stddev=np.sqrt(1 / self.obs_dim)),
-        #                       name='dense_sigma_1')
-        # out = tf.layers.dense(out, units,
-        #                       kernel_initializer=tf.random_normal_initializer(
-        #                           stddev=np.sqrt(1 / units)), name='dense_sigma_2')
-        out = tf.layers.dense(self.obs_ph, self.act_dim, tf.tanh,
-                              kernel_initializer=tf.random_normal_initializer(
-                                  stddev=np.sqrt(1 / self.obs_dim)),
+        out = tf.layers.dense(self.obs_ph, units, tf.nn.relu,
+                              kernel_initializer=tf.zeros_initializer(),
+                              name='dense_sigma_1')
+        out = tf.layers.dense(out, self.act_dim,
+                              kernel_initializer=tf.zeros_initializer(),
                               name='output_sigma')
-        # assuming a diagonal covariance for the multi-variate gaussian distributionlogvar_speed = (10 * hid3_size) // 48
-        self.log_vars = out
-
-        # self.log_vars = tf.get_variable('variance', (self.act_dim), tf.float32)
-        # self.log_vars = tf.Print(self.log_vars, [self.log_vars], message='log var: ')
+        # assuming a diagonal covariance for the multi-variate gaussian distribution
+        self.log_vars = out #tf.Print(out, [out], message='log vars: ', summarize=100)
 
     def _log_prob(self):
-        # add time dim to log_var?
         self.logp = -0.5 * (tf.reduce_sum(self.log_vars) + self.act_dim*tf.log(2*np.pi))  # probability of a trajectory
         self.logp += -0.5 * tf.reduce_sum(tf.square(self.act_ph - self.means) /
                                           tf.exp(self.log_vars), axis=1)
@@ -82,7 +74,6 @@ class Policy:
         self.sample = self.means + tf.exp(self.log_vars / 2.0) * \
                        tf.random_normal(shape=(self.act_dim,))
         # self.sample = tf.clip_by_value(self.sample, self.action_space.low[0], self.action_space.high[0])
-        # self.sample = tf.reshape(self.sample,(self.act_dim,))
 
     def _trace_init(self):
         """
@@ -104,7 +95,7 @@ class Policy:
         # self.loss -= 1e-1 * self.normal_dist.entropy()
 
     def _trace(self):
-        self.optimizer = tf.train.AdamOptimizer(1e-3)
+        self.optimizer = tf.train.AdamOptimizer(1e-5)
         self.grads = self.optimizer.compute_gradients(self.loss, tf.trainable_variables())
         self.identity_update = [self.identity.assign(self.identity*self.discount)]
         # self.identity = tf.Print(self.identity, [self.identity], message ='identity: ')
@@ -136,6 +127,15 @@ class Policy:
         # self.sess.run(self.identity_update)
         self.sess.run([self.train,self.loss], feed_dict)
 
+    def save(self):
+        if not os.path.exists(OUTPATH + 'policy'):
+            os.makedirs(OUTPATH + 'policy')
+        self.saver.save(self.sess, OUTPATH + 'policy/policy.pl')
+
+    def load(self, load_from):
+        self.saver.restore(self.sess, load_from)
+        pass
+
     def close_sess(self):
         self.sess.close()
 
@@ -157,18 +157,13 @@ class ValueFunc:
             self.advantages_ph = tf.placeholder(tf.float32, (None,), 'advantages_ph')
 
             units = self.obs_dim * 10
-            # out = tf.layers.dense(self.obs_ph, units, tf.nn.relu,
-            #                       kernel_initializer=tf.random_normal_initializer(
-            #                         stddev=np.sqrt(1 / self.obs_dim)),
-            #                       name="valfunc_d1")
-            # out = tf.layers.dense(out, units,
-            #                       kernel_initializer=tf.random_normal_initializer(
-            #                           stddev=np.sqrt(1 / units)),
-            #                       name="valfunc_d2")
-            out = tf.layers.dense(self.obs_ph, 1,
-                                  kernel_initializer=tf.random_normal_initializer(
-                                      stddev=np.sqrt(1 / self.obs_dim)),
+            out = tf.layers.dense(self.obs_ph, units, tf.nn.relu,
+                                  kernel_initializer=tf.zeros_initializer(),
+                                  name="valfunc_d1")
+            out = tf.layers.dense(out, 1,
+                                  kernel_initializer=tf.zeros_initializer(),
                                   name='output')
+
             # out = tf.Print(out, [out], message='out: ')
             self.out = tf.squeeze(out)  # remove dimensions of size 1 from the shape
             # self.out = tf.Print(out, [out], message='value prediction: ')
@@ -191,6 +186,7 @@ class ValueFunc:
             self.train = self.optimizer.apply_gradients(
                 [(self.trace[i], grad[1]) for i, grad in enumerate(self.grads)])
             self.init = tf.global_variables_initializer()
+            self.saver = tf.train.Saver()
         self.sess = tf.Session(graph=self.g)
         self.sess.run(self.init)
 
@@ -208,6 +204,15 @@ class ValueFunc:
         val = self.sess.run(self.out, feed_dict=feed_dict)
         return np.squeeze(val)
 
+    def save(self):
+        # self.builder = tf.saved_model.builder.SavedModelBuilder(OUTPATH + 'value-func/')
+        if not os.path.exists(OUTPATH + 'value-func'):
+            os.makedirs(OUTPATH + 'value-func')
+        self.saver.save(self.sess, OUTPATH + 'value-func/value-func.pl')
+
+    def load(self, load_from):
+        self.saver.restore(self.sess, load_from)
+
     def close_sess(self):
         self.sess.close()
 
@@ -215,6 +220,7 @@ class Experiment:
 
     def __init__(self, env_name, discount=1.0):
         self.env = gym.make(env_name)
+        gym.spaces.seed(1234)
         self.obs_dim = self.env.observation_space.shape[0]
         self.act_dim = self.env.action_space.shape[0]
         self.discount = discount
@@ -223,72 +229,93 @@ class Experiment:
 
         print('observation dimension:', self.obs_dim)
         print('action dimension:', self.act_dim)
+        self.init_scaler()
 
-    def featurize_obs(self, obs):
-        """
-           Returns the featurized representation for a state.
-        """
-        scaled = None
-        try:
-            scaled = self.scaler.transform([obs])
-        except ValueError:
-            pass
-        featurized = self.featurizer.transform(scaled)
-        return featurized[0]
+    def init_scaler(self):
+        print('fitting scaler')
+        self.scaler = sklearn.preprocessing.StandardScaler()
+        observation_samples = []
+        for i in range(5):
+            observation = []
+            obs = self.env.reset()
+            observation.append(obs)
+            obs = obs.astype(np.float64).reshape((1, -1))
+            done = False
+            while not done:
+                action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
+                obs_new, reward, done, _ = self.env.step(action)
+                observation.append(obs_new)
+                obs = obs_new.astype(np.float64).reshape((1, -1))
+            observation_samples.append(observation)
+        observation_samples = np.concatenate(observation_samples, axis=0)
+        # print(observation_samples.shape)
+        self.scaler.fit(observation_samples)
 
-    def run_one_epsisode(self):
+    def normalize_obs(self, obs):
+        return self.scaler.transform(obs)
+
+    def run_one_epsisode(self, save=True, train=True):
         obs = self.env.reset()
-        # obs = self.featurize_obs(obs)
         obs = obs.astype(np.float64).reshape((1, -1))
-        observes, actions, rewards = [], [], []
+        obs = self.normalize_obs(obs)
+        rewards = []
         done = False
         step = 0
         while not done:
             self.env.render()
 
             action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
-
+            # print(action)
             obs_new, reward, done, _ = self.env.step(action)
             obs_new = obs_new.astype(np.float64).reshape((1, -1))
+            obs_new = self.normalize_obs(obs_new)
 
             if not isinstance(reward, float):
                 reward = np.asscalar(reward)
             rewards.append(reward)
 
-            # print('computing advantage')
-            advantage = reward + self.discount * self.value_func.predict(obs_new) - self.value_func.predict(obs)
-            advantage = advantage.astype(np.float64).reshape((1,))
 
-            # print('advantage', advantage)
+            if train:
 
-            self.policy.update(obs, action, advantage)
-            self.value_func.update(obs, advantage)
+                advantage = reward + self.discount * self.value_func.predict(obs_new) - self.value_func.predict(obs)
+                advantage = advantage.astype(np.float64).reshape((1,))
+
+                self.policy.update(obs, action, advantage)
+                self.value_func.update(obs, advantage)
 
             obs = obs_new
             step += 0.001
 
-        return observes, actions, rewards
+        if save:
+            self.policy.save()
+            self.value_func.save()
+
+        return rewards
 
 
-
-# network too big will explode!!
 if __name__ == "__main__":
-    env = Experiment('HumanoidStandup-v2')
+    env = Experiment('Walker2d-v2')
     steps = []
     undiscounted = []
-    # 100 episodes
-    for i in range(10000):
+    iterations = 1000
+    for i in range(iterations):
         # trace vectors are emptied at the beginning of each episode
         env.policy.sess.run(env.policy.trace_zero)
         env.value_func.sess.run(env.value_func.trace_zero)
 
-        if (i+1)%50 == 0:
-            print('episode: ', i+1)
-        _, _, rewards = env.run_one_epsisode()
+        rewards = env.run_one_epsisode(save=i==(iterations-1), train=True)
         total_steps = len(rewards)
+        print('episode: ', i)
         print('total steps: {0}, episode_reward: {1}'.format(total_steps, np.sum(rewards)))
+
         steps.append(total_steps)
         undiscounted.append(np.sum(rewards))
+
+        # if (i+1)%20 == 0:
+        #     print('episode: ', i+1)
+        #     print('average steps', np.average(steps))
+        #     print('average rewards', np.average(rewards))
+
 
     plt.subplot(121)
     plt.xlabel('episode')

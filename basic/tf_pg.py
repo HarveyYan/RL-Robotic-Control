@@ -305,7 +305,7 @@ class Experiment:
             print('We have a problem with the featurizer!')
         return featurized[0]
 
-    def run_one_episode(self, save=True, train=True):
+    def run_one_episode(self, save=True, train=True, animate=False):
         # initializing trace
         self.policy.initialize_trace()
         self.value_func.initialize_trace()
@@ -317,6 +317,8 @@ class Experiment:
         done = False
         step = 0
         while not done:
+            if animate:
+                self.env.render()
             # print('samping')
             action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
             # print('action', action)
@@ -364,10 +366,10 @@ def load_from_experiment(path='./Results/cmc/2018-03-31_12_18_20/'):
     steps = []
     undiscounted = []
     # 10 episodes
-    for i in range(20):
+    for i in range(50):
         # trace vectors are emptied at the beginning of each episode
         print('episode: ', i)
-        rewards = env.run_one_episode(save=False, train=False)
+        rewards = env.run_one_episode(save=False, train=False, animate=True)
         total_steps = len(rewards)
         print('total steps: {0}, episode_reward: {1}'.format(total_steps, np.sum(rewards)))
         steps.append(total_steps)
