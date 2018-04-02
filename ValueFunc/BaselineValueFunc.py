@@ -22,10 +22,13 @@ class ValueFunc:
 
             units = self.obs_dim * 10
             out = tf.layers.dense(self.obs_ph, units, tf.nn.relu,
-                                  kernel_initializer=tf.zeros_initializer(),
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                   name="valfunc_d1")
+            # out = tf.layers.dense(self.out, units, tf.nn.relu,
+            #                       kernel_initializer=tf.contrib.layers.xavier_initializer(),
+            #                       name="valfunc_d1")
             out = tf.layers.dense(out, 1,
-                                  kernel_initializer=tf.zeros_initializer(),
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                   name='output')
 
             # out = tf.Print(out, [out], message='out: ')
@@ -41,7 +44,7 @@ class ValueFunc:
             self.trace_zero = [self.trace[i].assign(tf.zeros_like(tv)) for i, tv in enumerate(tvs)]
             self.identity_init = [self.identity.assign(1.0)]
 
-            self.optimizer = tf.train.AdamOptimizer(1e-2)
+            self.optimizer = tf.train.AdamOptimizer(1e-4)
             self.grads = self.optimizer.compute_gradients(self.loss, tf.trainable_variables())
             self.identity_update = [self.identity.assign(self.identity*self.discount)]
             self.trace_update = [self.trace[i].assign(self.discount * self.lamb * self.trace[i] + grad[0]) for i, grad

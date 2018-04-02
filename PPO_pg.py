@@ -96,7 +96,8 @@ class Experiment:
             'value_func_loss': [],
             'entropy': [],
             'beta': [],
-            'kl': []
+            'kl': [],
+            'advantage':[]
         }
 
         done = False
@@ -126,6 +127,7 @@ class Experiment:
                 log['entropy'].append(entropy)
                 log['beta'].append(beta)
                 log['value_func_loss'].append(value_func_loss)
+                log['advantage'].append(advantage)
 
             obs = obs_new
             step += 0.001
@@ -150,7 +152,7 @@ class Experiment:
             # compute statistics such as mean and std
             log['steps'] = len(log['rewards'])
             log['rewards'] = np.sum(log['rewards'])
-            for key in ['policy_loss', 'kl', 'entropy', 'beta', 'value_func_loss']:
+            for key in ['policy_loss', 'kl', 'entropy', 'beta', 'value_func_loss', 'advantage']:
                 log[key + '_mean'] = np.mean(log[key])
                 log[key + '_std'] = np.std(log[key])
                 del log[key]
@@ -158,7 +160,7 @@ class Experiment:
             # display
             print('episode: ', i)
             print('total steps: {0}, episodic rewards: {1}'.format(log['steps'], log['rewards']))
-            for key in ['policy_loss', 'kl', 'entropy', 'beta', 'value_func_loss']:
+            for key in ['policy_loss', 'kl', 'entropy', 'beta', 'value_func_loss', 'advantage']:
                 print('{:s}: {:.2g}({:.2g})'.format(key, log[key + '_mean'], log[key + '_std']))
             print('\n')
             ep_steps.append(log['steps'])
@@ -204,9 +206,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--env_name', type=str, help='OpenAI Gym environment name', default="HumanoidStandup-v2")
     parser.add_argument('-n', '--num_iterations', type=int, help='Number of episodes to run', default=1000)
-    parser.add_argument('-d', '--discount', type=float, help='Discount factor', default=1.0)
+    parser.add_argument('-d', '--discount', type=float, help='Discount factor', default=0.995)
     parser.add_argument('-k', '--kl_target', type=float, help='KL target', default=0.003)
-    parser.add_argument('-l', '--lamb', type=float, help='Lambda for Generalized Advantage Estimation', default=0.8)
+    parser.add_argument('-l', '--lamb', type=float, help='Lambda for Generalized Advantage Estimation', default=0.98)
     parser.add_argument('-a', '--animate', type=bool, help='Render animation or not', default=False)
     args = parser.parse_args()
 

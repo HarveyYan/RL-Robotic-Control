@@ -187,14 +187,14 @@ class ProximalPolicy:
 
         # TODO: too many "magic numbers" in next 8 lines of code, need to clean up
         if kl > self.kl_target * 2:  # servo beta to reach D_KL target
-            self.beta = np.minimum(35, 1.5 * self.beta)  # max clip beta
+            self.beta = np.minimum(100, 1.5 * self.beta)  # max clip beta
             if self.beta > 30 and self.lr_multiplier > 0.1:
                 self.lr_multiplier /= 1.5
         elif kl < self.kl_target / 2:
             self.beta = np.maximum(1 / 35, self.beta / 1.5)  # min clip beta
             if self.beta < (1 / 30) and self.lr_multiplier < 10:
                 self.lr_multiplier *= 1.5
-
+        # print(self.beta)
         return loss, kl, entropy, self.beta
 
     def save(self, saveto):
