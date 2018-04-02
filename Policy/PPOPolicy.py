@@ -195,6 +195,8 @@ class ProximalPolicy:
             if self.beta < (1 / 30) and self.lr_multiplier < 10:
                 self.lr_multiplier *= 1.5
 
+        return loss, kl, entropy, self.beta
+
     def save(self, saveto):
         if not os.path.exists(saveto + 'policy'):
             os.makedirs(saveto + 'policy')

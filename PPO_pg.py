@@ -14,6 +14,9 @@ import os
 import datetime
 import argparse
 import signal
+import csv
+import inspect
+import shutil
 
 from Policy.PPOPolicy import ProximalPolicy
 from ValueFunc.BaselineValueFunc import ValueFunc
@@ -23,6 +26,7 @@ date_id = str(datetime.datetime.now()).split('.')[0].replace(':', '_').replace('
 
 class GracefulKiller:
     """ Gracefully exit program on CTRL-C """
+
     def __init__(self):
         self.kill_now = False
         signal.signal(signal.SIGINT, self.exit_gracefully)
@@ -30,6 +34,7 @@ class GracefulKiller:
 
     def exit_gracefully(self, signum, frame):
         self.kill_now = True
+
 
 class Experiment:
 
@@ -43,9 +48,17 @@ class Experiment:
         self.lamb = lamb
         self.animate = animate
         self.killer = GracefulKiller()
-        self.policy = ProximalPolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, discount=discount, lamb=lamb)
+        self.policy = ProximalPolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, discount=discount,
+                                     lamb=lamb)
         self.value_func = ValueFunc(self.obs_dim, discount=discount, lamb=lamb)
 
+        # save copies of file
+        shutil.copy(inspect.getfile(self.policy.__class__), OUTPATH)
+        shutil.copy(inspect.getfile(self.value_func.__class__), OUTPATH)
+        shutil.copy(inspect.getfile(self.__class__), OUTPATH)
+
+        self.log_file = open(OUTPATH + 'log.csv', 'w')
+        self.write_header = True
         print('observation dimension:', self.obs_dim)
         print('action dimension:', self.act_dim)
         self.init_scaler()
@@ -77,7 +90,15 @@ class Experiment:
         obs = self.env.reset()
         obs = obs.astype(np.float64).reshape((1, -1))
         obs = self.normalize_obs(obs)
-        rewards = []
+        log = {
+            'rewards': [],
+            'policy_loss': [],
+            'value_func_loss': [],
+            'entropy': [],
+            'beta': [],
+            'kl': []
+        }
+
         done = False
         step = 0
         while not done:
@@ -92,14 +113,19 @@ class Experiment:
 
             if not isinstance(reward, float):
                 reward = np.asscalar(reward)
-            rewards.append(reward)
+            log['rewards'].append(reward)
 
             if train:
                 advantage = reward + self.discount * self.value_func.predict(obs_new) - self.value_func.predict(obs)
                 advantage = advantage.astype(np.float64).reshape((1,))
 
-                self.policy.update(obs, action, advantage)
-                self.value_func.update(obs, advantage)
+                policy_loss, kl, entropy, beta = self.policy.update(obs, action, advantage)
+                value_func_loss = self.value_func.update(obs, advantage)
+                log['policy_loss'].append(policy_loss)
+                log['kl'].append(kl)
+                log['entropy'].append(entropy)
+                log['beta'].append(beta)
+                log['value_func_loss'].append(value_func_loss)
 
             obs = obs_new
             step += 0.001
@@ -108,31 +134,51 @@ class Experiment:
             self.policy.save(OUTPATH)
             self.value_func.save(OUTPATH)
 
-        return rewards
-
+        return log
 
     def run_expr(self):
-        steps = []
-        undiscounted = []
+        ep_steps = []
+        ep_rewards = []
         for i in range(self.num_iterations):
             # trace vectors are emptied at the beginning of each episode
             self.policy.init_trace()
             self.value_func.init_trace()
 
-            rewards = self.run_one_epsisode(save=i == (self.num_iterations - 1), train=True, animate=self.animate)
-            total_steps = len(rewards)
+            # run (and train) one trajectory
+            log = self.run_one_epsisode(save=i == (self.num_iterations - 1), train=True, animate=self.animate)
+
+            # compute statistics such as mean and std
+            log['steps'] = len(log['rewards'])
+            log['rewards'] = np.sum(log['rewards'])
+            for key in ['policy_loss', 'kl', 'entropy', 'beta', 'value_func_loss']:
+                log[key + '_mean'] = np.mean(log[key])
+                log[key + '_std'] = np.std(log[key])
+                del log[key]
+
+            # display
             print('episode: ', i)
-            print('total steps: {0}, episode_reward: {1}'.format(total_steps, np.sum(rewards)))
+            print('total steps: {0}, episodic rewards: {1}'.format(log['steps'], log['rewards']))
+            for key in ['policy_loss', 'kl', 'entropy', 'beta', 'value_func_loss']:
+                print('{:s}: {:.2g}({:.2g})'.format(key, log[key + '_mean'], log[key + '_std']))
+            print('\n')
+            ep_steps.append(log['steps'])
+            ep_rewards.append(log['rewards'])
 
-            steps.append(total_steps)
-            undiscounted.append(np.sum(rewards))
+            # write to log.csv
+            if self.write_header:
+                fieldnames = [x for x in log.keys()]
+                self.writer = csv.DictWriter(self.log_file, fieldnames=fieldnames)
+                self.writer.writeheader()
+                self.write_header = False
+            self.writer.writerow(log)
+            # we want the csv file to preserve information even if the program terminates earlier than scheduled.
+            self.log_file.flush()
 
+            # save model weights if stopped manually
             if self.killer.kill_now:
                 if input('Terminate training (y/[n])? ') == 'y':
                     self.policy.save(OUTPATH)
                     self.value_func.save(OUTPATH)
-                    np.savetxt(OUTPATH + 'steps', steps, delimiter=',')
-                    np.savetxt(OUTPATH + 'rewards', undiscounted, delimiter=',')
                     break
                 self.killer.kill_now = False
 
@@ -141,20 +187,18 @@ class Experiment:
             #     print('average steps', np.average(steps))
             #     print('average rewards', np.average(rewards))
 
-        np.savetxt(OUTPATH + 'steps', steps, delimiter=',')
-        np.savetxt(OUTPATH + 'rewards', undiscounted, delimiter=',')
-
         plt.subplot(121)
-        plt.xlabel('episode')
+        plt.xlabel('episodes')
         plt.ylabel('steps')
-        plt.plot(steps)
+        plt.plot(ep_steps)
 
         plt.subplot(122)
-        plt.xlabel('episode')
-        plt.ylabel('undiscounted rewards')
-        plt.plot(undiscounted)
+        plt.xlabel('episodes')
+        plt.ylabel('episodic rewards')
+        plt.plot(ep_rewards)
 
-        plt.savefig(OUTPATH+'train.png')
+        plt.savefig(OUTPATH + 'train.png')
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -167,7 +211,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     global OUTPATH
-    OUTPATH = './results/'+args.env_name+'/'+'PPO/'+date_id
+    OUTPATH = './results/' + args.env_name + '/' + 'PPO/' + date_id
     if not os.path.exists(OUTPATH):
         os.makedirs(OUTPATH)
 

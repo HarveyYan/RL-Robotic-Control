@@ -62,7 +62,8 @@ class ValueFunc:
         self.sess.run(self.trace_update, feed_dict)
         # in Barto&Sutton's book they have an identity scaler for the trace update, which is not benevolent however.
         # self.sess.run(self.identity_update)
-        self.sess.run([self.train, self.loss], feed_dict)
+        _ , loss = self.sess.run([self.train, self.loss], feed_dict)
+        return loss
 
     def init_trace(self):
         self.sess.run(self.trace_zero)
