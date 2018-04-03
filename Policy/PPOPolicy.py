@@ -137,7 +137,7 @@ class ProximalPolicy:
         """
         loss = -tf.reduce_mean(tf.exp(self.logp - self.logp_old)) # p/p_old
         loss += tf.reduce_mean(self.beta_ph * self.kl)
-        loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
+        # loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
         loss -= self.entropy # encouraged, needs multiplier?
         self.loss = loss
 
@@ -187,7 +187,7 @@ class ProximalPolicy:
 
         # TODO: too many "magic numbers" in next 8 lines of code, need to clean up
         if kl > self.kl_target * 2:  # servo beta to reach D_KL target
-            self.beta = np.minimum(100, 1.5 * self.beta)  # max clip beta
+            self.beta = np.minimum(35, 1.5 * self.beta)  # max clip beta
             if self.beta > 30 and self.lr_multiplier > 0.1:
                 self.lr_multiplier /= 1.5
         elif kl < self.kl_target / 2:
