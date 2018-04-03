@@ -113,7 +113,7 @@ class Experiment:
             obs_new = self.normalize_obs(obs_new)
 
             if not isinstance(reward, float):
-                reward = np.asscalar(reward)
+                reward = np.asscalar(reward) * (1-self.discount) # scale rewards
             log['rewards'].append(reward)
 
             if train:
