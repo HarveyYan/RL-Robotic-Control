@@ -135,7 +135,7 @@ class ProximalPolicy:
             4) Entropy for encouraging exploration
         See: https://arxiv.org/pdf/1707.02286.pdf
         """
-        loss = -tf.reduce_mean(self.advantages_ph * tf.exp(self.logp - self.logp_old)) # p/p_old
+        loss = -tf.reduce_mean(tf.exp(self.logp - self.logp_old)) # p/p_old
         loss += tf.reduce_mean(self.beta_ph * self.kl)
         loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
         loss -= self.entropy # encouraged, needs multiplier?
@@ -151,7 +151,7 @@ class ProximalPolicy:
 
     def _train(self):
         self.train = self.optimizer.apply_gradients(
-            [(self.trace[i], grad[1]) for i, grad in enumerate(self.grads)])
+            [(self.trace[i]*self.advantages_ph, grad[1]) for i, grad in enumerate(self.grads)])
 
     def _init_session(self):
         self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
