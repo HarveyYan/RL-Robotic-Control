@@ -15,7 +15,7 @@ class ProximalPolicy:
         self.kl_target = kl_target
         self.eta = 50 # hinge loss multiplier, between actual kl and kl target
         self.beta = 1.0 # kl penalty term multiplier
-        self.lr = 1e-4
+        self.lr = 1e-5
         self.lr_multiplier = 1.0  # dynamically adjust lr when D_KL out of control
         self._build_graph()
         self._init_session()

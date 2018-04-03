@@ -35,7 +35,7 @@ class ValueFunc:
             self.out = tf.squeeze(out)  # remove dimensions of size 1 from the shape
             # self.out = tf.Print(out, [out], message='value prediction: ')
             # gradient ascent
-            self.loss = -self.out * self.advantages_ph
+            self.loss = -self.out
             # initialize trace
             tvs = tf.trainable_variables()
             self.trace = [(tf.Variable(tf.zeros_like(tv), trainable=False)) for tv in tvs]
@@ -51,7 +51,7 @@ class ValueFunc:
                                  in enumerate(self.grads)]
 
             self.train = self.optimizer.apply_gradients(
-                [(self.trace[i], grad[1]) for i, grad in enumerate(self.grads)])
+                [(self.trace[i]*self.advantages_ph, grad[1]) for i, grad in enumerate(self.grads)])
             self.init = tf.global_variables_initializer()
             self.saver = tf.train.Saver()
         self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
