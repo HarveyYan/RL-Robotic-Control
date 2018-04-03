@@ -113,11 +113,12 @@ class Experiment:
             obs_new = self.normalize_obs(obs_new)
 
             if not isinstance(reward, float):
-                reward = np.asscalar(reward) * (1-self.discount) # scale rewards
+                reward = np.asscalar(reward)
             log['rewards'].append(reward)
 
             if train:
-                advantage = reward + self.discount * self.value_func.predict(obs_new) - self.value_func.predict(obs)
+                # TD residual
+                advantage = reward*(1-self.discount) + self.discount * self.value_func.predict(obs_new) - self.value_func.predict(obs)
                 advantage = advantage.astype(np.float64).reshape((1,))
 
                 policy_loss, kl, entropy, beta = self.policy.update(obs, action, advantage)
