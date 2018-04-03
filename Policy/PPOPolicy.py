@@ -137,7 +137,7 @@ class ProximalPolicy:
         """
         loss = -tf.reduce_mean(tf.exp(self.logp - self.logp_old)) # p/p_old
         loss += tf.reduce_mean(self.beta_ph * self.kl)
-        # loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
+        loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
         loss -= self.entropy # encouraged, needs multiplier?
         self.loss = loss
 
