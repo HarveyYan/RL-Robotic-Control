@@ -3,10 +3,10 @@
 import tensorflow as tf
 import numpy as np
 from sklearn.utils import shuffle
-
+import os
 
 class l2TargetValueFunc:
-    def __init__(self, obs_dim, epochs=1):
+    def __init__(self, obs_dim, epochs=10):
         self.obs_dim = obs_dim
         self.replay_buffer_x = None
         self.replay_buffer_y = None
@@ -44,54 +44,39 @@ class l2TargetValueFunc:
             # gradient ascent
             self.loss = tf.reduce_mean(tf.square(self.out - self.val_ph))  # squared loss
             optimizer = tf.train.AdamOptimizer(self.lr)
+            self.saver = tf.train.Saver()
             self.train = optimizer.minimize(self.loss)
             self.init = tf.global_variables_initializer()
         self.sess = tf.Session(graph=self.g)
         self.sess.run(self.init)
 
     def update(self, x, y):
-        feed_dict = {self.obs_ph: x,
-                     self.val_ph: y
-                     }
-
-        # not using eligibility trace for the time being
-        self.sess.run(self.train, feed_dict)
-        # add experience replay
-
-        # num_batches = max(x.shape[0] // 256, 1)
-        # batch_size = x.shape[0] // num_batches
-        # # targets_hat = self.predict(x)  # check explained variance prior to update
-        # # old_exp_var = 1 - np.var(targets - targets_hat) / np.var(y)
-        # if self.replay_buffer_x is None:
-        #     x_train, y_train = x, y
-        #     self.replay_buffer_x = x
-        #     self.replay_buffer_y = y
-        # else:
-        #     x_train = np.concatenate([x, self.replay_buffer_x])
-        #     y_train = np.concatenate([y, self.replay_buffer_y])
-        #     self.replay_buffer_x = np.concatenate([x, self.replay_buffer_x])
-        #     self.replay_buffer_y = np.concatenate([y, self.replay_buffer_y])
-        # for e in range(20):
-        #     x_train, y_train = shuffle(x_train, y_train)
-        #     for j in range(num_batches):
-        #         start = j * batch_size
-        #         end = (j + 1) * batch_size
-        #         feed_dict = {self.obs_ph: x_train[start:end, :],
-        #                      self.val_ph: y_train[start:end]}
-        #         _, l = self.sess.run([self.train, self.loss], feed_dict=feed_dict)
+        """
+        Using mini-batch gradient descent is imperative to the model training speed.
+        Experience replay and shuffling are also complementary.
+        :param x:
+        :param y:
+        :return:
+        """
 
         num_batches = max(x.shape[0] // 256, 1)
         batch_size = x.shape[0] // num_batches
-        y_hat = self.predict(x)  # check explained variance prior to update
-        old_exp_var = 1 - np.var(y - y_hat) / np.var(y)
+
         if self.replay_buffer_x is None:
             x_train, y_train = x, y
         else:
             x_train = np.concatenate([x, self.replay_buffer_x])
             y_train = np.concatenate([y, self.replay_buffer_y])
-        self.replay_buffer_x = x
-        self.replay_buffer_y = y
+
+        if self.replay_buffer_x is None or self.replay_buffer_x.shape[0] > 1000:
+            self.replay_buffer_x = x
+            self.replay_buffer_y = y
+        else:
+            self.replay_buffer_x = np.concatenate([x, self.replay_buffer_x])
+            self.replay_buffer_y = np.concatenate([y, self.replay_buffer_y])
+
         for e in range(self.epochs):
+            # Interesting but not very necessary.
             x_train, y_train = shuffle(x_train, y_train)
             for j in range(num_batches):
                 start = j * batch_size
@@ -102,8 +87,15 @@ class l2TargetValueFunc:
 
         y_hat = self.predict(x)
         loss = np.mean(np.square(y_hat - y))
-        exp_var = 1 - np.var(y - y_hat) / np.var(y)  # diagnose over-fitting of val func
         return loss
+
+    def save(self, saveto):
+        if not os.path.exists(saveto + 'value_func'):
+            os.makedirs(saveto + 'value_func')
+        self.saver.save(self.sess, saveto + 'value_func/value_func.pl')
+
+    def load(self, load_from):
+        self.saver.restore(self.sess, load_from)
 
     def predict(self, obs):
         feed_dict = {self.obs_ph: obs}

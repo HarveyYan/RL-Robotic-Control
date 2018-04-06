@@ -10,7 +10,6 @@ His implementation on PPO really helped me a lot.
 import numpy as np
 import gym
 import matplotlib.pyplot as plt
-import sklearn.preprocessing
 import os
 import datetime
 import argparse
@@ -18,6 +17,7 @@ import signal
 import csv
 import inspect
 import shutil
+import pickle
 
 from utils import Scaler
 
@@ -45,8 +45,9 @@ class GracefulKiller:
 
 class Experiment:
 
-    def __init__(self, env_name, discount, num_iterations, lamb, animate, kl_target):
+    def __init__(self, env_name, discount, num_iterations, lamb, animate, kl_target, demonstrate):
         self.env = gym.make(env_name)
+        self.env = gym.wrappers.FlattenDictWrapper(self.env, ['observation', 'desired_goal', 'achieved_goal'])
         gym.spaces.seed(1234)
         self.obs_dim = self.env.observation_space.shape[0]
         self.act_dim = self.env.action_space.shape[0]
@@ -63,22 +64,24 @@ class Experiment:
         self.value_func = l2TargetValueFunc(self.obs_dim, epochs=10)
         # self.value_func = ValueFunc(self.obs_dim, discount=discount, lamb=1)
 
-        # save copies of file
-        shutil.copy(inspect.getfile(self.policy.__class__), OUTPATH)
-        shutil.copy(inspect.getfile(self.value_func.__class__), OUTPATH)
-        shutil.copy(inspect.getfile(self.__class__), OUTPATH)
+        if not demonstrate:
+            # save copies of file
+            shutil.copy(inspect.getfile(self.policy.__class__), OUTPATH)
+            shutil.copy(inspect.getfile(self.value_func.__class__), OUTPATH)
+            shutil.copy(inspect.getfile(self.__class__), OUTPATH)
 
-        self.log_file = open(OUTPATH + 'log.csv', 'w')
-        self.write_header = True
+            self.log_file = open(OUTPATH + 'log.csv', 'w')
+            self.write_header = True
+
         print('observation dimension:', self.obs_dim)
         print('action dimension:', self.act_dim)
+
+        # Use of a scaler is crucial
+        self.scaler = Scaler(self.obs_dim)
         self.init_scaler()
-        # self.scaler = Scaler(self.obs_dim)
 
     def init_scaler(self):
         print('fitting scaler')
-        # self.scaler = sklearn.preprocessing.StandardScaler()
-        self.scaler = Scaler(self.obs_dim)
         observation_samples = []
         for i in range(5):
             observation = []
@@ -88,13 +91,12 @@ class Experiment:
             done = False
             while not done:
                 action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
-                obs_new, reward, done, _ = self.env.step(action)
+                obs_new, reward, done, _ = self.env.step(action.reshape(-1))
                 observation.append(obs_new)
                 obs = obs_new.astype(np.float64).reshape((1, -1))
             observation_samples.append(observation)
         observation_samples = np.concatenate(observation_samples, axis=0)
         # print(observation_samples.shape)
-        # self.scaler.fit(observation_samples)
         self.scaler.update(observation_samples)
 
     def normalize_obs(self, obs):
@@ -104,7 +106,7 @@ class Experiment:
         # return self.scaler.transform(obs)
         return obs_scaled
 
-    def run_one_episode(self, animate=False):
+    def run_one_episode(self):
         """
         collect data only
         :param save:
@@ -118,14 +120,14 @@ class Experiment:
         done = False
         step = 0
         while not done:
-            if animate:
+            if self.animate:
                 self.env.render()
             obs = obs.astype(np.float64).reshape((1, -1))
             obs = self.normalize_obs(obs)
             observes.append(obs)
             action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
             actions.append(action)
-            obs_new, reward, done, _ = self.env.step(action)
+            obs_new, reward, done, _ = self.env.step(action.reshape(-1))
             if not isinstance(reward, float):
                 reward = np.asscalar(reward)
             rewards.append(reward)
@@ -134,11 +136,6 @@ class Experiment:
             step += 0.001
 
         return np.concatenate(observes), np.concatenate(actions), np.array(rewards)
-
-    def discount_raw(self, x, gamma):
-        """ Calculate discounted forward sum of a sequence at each point """
-        # empirically verified...
-        return scipy.signal.lfilter([1.0], [1.0, -gamma], x[::-1])[::-1]
 
     def discounted_sum(self, l, factor):
         discounted = []
@@ -155,9 +152,15 @@ class Experiment:
             trajectory = {'observes': observes,
                           'actions': actions,
                           'rewards': rewards}
+            # scale rewards
+            if self.discount < 0.999:
+                rewards = rewards*(1-self.discount)
+
             trajectory['values'] = self.value_func.predict(observes)
-            trajectory['mc_return'] = self.discount_raw(rewards, self.discount)
+            trajectory['mc_return'] = self.discounted_sum(rewards, self.discount)
+
             trajectory['td_residual'] = rewards + self.discount*np.append(trajectory['values'][1:],0) - trajectory['values']
+            trajectory['gae'] = self.discounted_sum(trajectory['td_residual'], self.discount*self.lamb)
 
             trajectories.append(trajectory)
 
@@ -174,6 +177,9 @@ class Experiment:
             actions = np.concatenate([t['actions'] for t in trajectories])
             mc_returns = np.concatenate([t['mc_return'] for t in trajectories])
             advantages = np.concatenate([t['td_residual'] for t in trajectories])
+
+            # normalize advantage estimates
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-6)
 
             value_func_loss = self.value_func.update(observes, mc_returns)
             policy_loss, kl, entropy, beta = self.policy.update(observes, actions, advantages)
@@ -215,6 +221,7 @@ class Experiment:
                 if input('Terminate training (y/[n])? ') == 'y':
                     self.policy.save(OUTPATH)
                     self.value_func.save(OUTPATH)
+                    self.scaler.save(OUTPATH)
                     break
                 self.killer.kill_now = False
 
@@ -223,17 +230,44 @@ class Experiment:
             #     print('average steps', np.average(steps))
             #     print('average rewards', np.average(rewards))
 
+        self.policy.save(OUTPATH)
+        self.value_func.save(OUTPATH)
+        self.scaler.save(OUTPATH)
+
+        plt.figure(figsize=(12,9))
         plt.subplot(121)
         plt.xlabel('episodes')
+        plt.xticks(np.arange(len(ep_steps)), np.arange(len(ep_steps))*self.episodes)
         plt.ylabel('steps')
         plt.plot(ep_steps)
 
         plt.subplot(122)
         plt.xlabel('episodes')
+        plt.xticks(np.arange(len(ep_rewards)), np.arange(len(ep_rewards)) * self.episodes)
         plt.ylabel('episodic rewards')
         plt.plot(ep_rewards)
 
         plt.savefig(OUTPATH + 'train.png')
+
+    def load_model(self, load_from):
+        from tensorflow.python.tools import inspect_checkpoint as chkp
+
+        # # print all tensors in checkpoint file
+        # chkp.print_tensors_in_checkpoint_file(load_from+'policy/policy.pl', tensor_name='', all_tensors=True, all_tensor_names=True)
+        self.policy.load(load_from + 'policy/policy.pl')
+        self.value_func.load(load_from + 'value_func/value_func.pl')
+
+    def demonstrate_agent(self):
+        load_from = "./results/Hopper-v2/offline-PPO/2018-04-06_12_58_36/"
+        self.load_model(load_from)
+        with open(load_from + "scaler.pkl", 'rb') as file:
+            self.scaler = pickle.load(file)
+        self.animate = True
+        for i in range(10):
+            observes, actons, rewards = self.run_one_episode()
+            ep_rewards = np.sum(rewards)
+            ep_steps = len(rewards)
+            print("Total steps: {0}, total rewards: {1}\n".format(ep_steps, ep_rewards))
 
 
 if __name__ == "__main__":
@@ -243,13 +277,22 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--discount', type=float, help='Discount factor', default=0.995)
     parser.add_argument('-k', '--kl_target', type=float, help='KL target', default=0.003)
     parser.add_argument('-l', '--lamb', type=float, help='Lambda for Generalized Advantage Estimation', default=0.98)
-    parser.add_argument('-a', '--animate', type=bool, help='Render animation or not', default=False)
+    parser.add_argument('-a', '--animate', type=bool, help='Render animation', default=False)
+    parser.add_argument('-s', '--demonstrate', type=bool, help='Demonstrate a trainied agent', default=False)
     args = parser.parse_args()
 
-    global OUTPATH
-    OUTPATH = './results/' + args.env_name + '/' + 'PPO/' + date_id
-    if not os.path.exists(OUTPATH):
-        os.makedirs(OUTPATH)
+    if not args.demonstrate:
+        print('training an agent anew')
+        global OUTPATH
+        OUTPATH = './results/' + args.env_name + '/' + 'offline-PPO/' + date_id
+        if not os.path.exists(OUTPATH):
+            os.makedirs(OUTPATH)
+        expr = Experiment(**vars(args))
+        expr.run_expr()
+    else:
+        print('loading an agent: Hooper-v2')
+        args.animate = True
+        args.env_name = "Hopper-v2"
+        expr = Experiment(**vars(args))
+        expr.demonstrate_agent()
 
-    expr = Experiment(**vars(args))
-    expr.run_expr()

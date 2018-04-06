@@ -22,6 +22,7 @@ from utils import Scaler
 
 from Policy.PPOPolicy import ProximalPolicy
 from ValueFunc.BaselineValueFunc import ValueFunc
+from ValueFunc.l2ValueFunc import l2TargetValueFunc
 
 date_id = str(datetime.datetime.now()).split('.')[0].replace(':', '_').replace(' ', '_') + '/'
 
@@ -50,11 +51,9 @@ class Experiment:
         self.lamb = lamb
         self.animate = animate
         self.killer = GracefulKiller()
-        # self.policy = ProximalPolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, discount=discount,
-        #                              lamb=lamb)
         self.policy = ProximalPolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, discount=discount, lamb=lamb)
         # using MC return would be more helpful
-        self.value_func = ValueFunc(self.obs_dim, discount=discount)
+        self.value_func = l2TargetValueFunc(self.obs_dim)
         # self.value_func = ValueFunc(self.obs_dim, discount=discount, lamb=1)
 
         # save copies of file
@@ -241,7 +240,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     global OUTPATH
-    OUTPATH = './results/' + args.env_name + '/' + 'PPO/' + date_id
+    OUTPATH = './results/' + args.env_name + '/' + 'online-PPO/' + date_id
     if not os.path.exists(OUTPATH):
         os.makedirs(OUTPATH)
 

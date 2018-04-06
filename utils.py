@@ -8,6 +8,7 @@ import os
 import shutil
 import glob
 import csv
+import pickle
 
 
 class Scaler(object):
@@ -57,6 +58,11 @@ class Scaler(object):
     def get(self):
         """ returns 2-tuple: (scale, offset) """
         return 1/(np.sqrt(self.vars) + 0.1)/3, self.means
+
+    def save(self, saveto):
+        with open(saveto+"scaler.pkl", 'wb') as output:
+            pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+
 
 
 class Logger(object):
