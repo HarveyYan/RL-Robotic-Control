@@ -1,18 +1,21 @@
+"""
+without eligibility trace, this one is almost identical to the reference policy implementation.
+"""
+
 import tensorflow as tf
 import numpy as np
 import os
 
 gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
 
-class ProximalPolicy:
+class NoTracePolicy:
 
-    def __init__(self, obs_dim, act_dim, action_space, kl_target, discount, lamb):
+    def __init__(self, obs_dim, act_dim, action_space, kl_target, epochs=1):
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.action_space = action_space
-        self.discount = discount
-        self.lamb = lamb
         self.kl_target = kl_target
+        self.epochs = epochs
         self.eta = 50 # hinge loss multiplier, between actual kl and kl target
         self.beta = 1.0 # kl penalty term multiplier
         self.lr = 1e-4
@@ -25,13 +28,11 @@ class ProximalPolicy:
         with self.g.as_default():
             self._placeholders()
             self._policy_nn_mu()
-            self._policy_nn_sigma()
+            # self._policy_nn_sigma()
             self._log_prob()
             self._kl_and_entropy()
             self._sample()
-            self._trace_init()
             self._loss()
-            self._trace()
             self._train()
             self.saver = tf.train.Saver()
             self.init = tf.global_variables_initializer()
@@ -42,8 +43,8 @@ class ProximalPolicy:
         :return:
         '''
         self.obs_ph = tf.placeholder(tf.float32, (None, self.obs_dim), 'obs')
-        self.advantages_ph = tf.placeholder(tf.float32, (1,), 'advantage')  # number of time steps, usually
         self.act_ph = tf.placeholder(tf.float32, (None, self.act_dim), 'act')
+        self.advantages_ph = tf.placeholder(tf.float32, (None,), 'advantage')  # number of time steps, usually
 
         self.means_old_ph = tf.placeholder(tf.float32, (None, self.act_dim), 'old_means')
         self.logvars_old_ph = tf.placeholder(tf.float32, (self.act_dim,), 'old_logvars')
@@ -53,19 +54,29 @@ class ProximalPolicy:
         self.lr_ph = tf.placeholder(tf.float32, (), 'learning_rate')
 
     def _policy_nn_mu(self):
-        units_layer_1 = 10 * self.obs_dim
-        units_layer_2 = int(np.sqrt(units_layer_1 * self.act_dim)) # geometirc mean of first and last layers
+        hid1_size = self.obs_dim * 10  # 10 empirically determined
+        hid3_size = self.act_dim * 10  # 10 empirically determined
+        hid2_size = int(np.sqrt(hid1_size * hid3_size))
+        # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
+        self.lr = 9e-4 / np.sqrt(hid2_size)  # 9e-4 empirically determined
+        # 3 hidden layers with tanh activations
+        out = tf.layers.dense(self.obs_ph, hid1_size, tf.nn.relu,
+                              kernel_initializer=tf.random_normal_initializer(
+                                  stddev=np.sqrt(1 / self.obs_dim)), name="h1")
+        out = tf.layers.dense(out, hid2_size, tf.nn.relu,
+                              kernel_initializer=tf.random_normal_initializer(
+                                  stddev=np.sqrt(1 / hid1_size)), name="h2")
+        out = tf.layers.dense(out, hid3_size, tf.nn.relu,
+                              kernel_initializer=tf.random_normal_initializer(
+                                  stddev=np.sqrt(1 / hid2_size)), name="h3")
+        self.means = tf.layers.dense(out, self.act_dim,
+                                     kernel_initializer=tf.random_normal_initializer(
+                                         stddev=np.sqrt(1 / hid3_size)), name="means")
 
-        out = tf.layers.dense(self.obs_ph, units_layer_1, tf.nn.relu,
-                              kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                              name='dense_mu_1')
-        out = tf.layers.dense(out, units_layer_2, tf.nn.relu,
-                              kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                              name='dense_mu_2')
-        out = tf.layers.dense(out, self.act_dim,  # tf.tanh,
-                              kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                              name='output_mu')
-        self.means = out# tf.Print(out, [out], message='Mean: ', summarize=100)
+        logvar_speed = (10 * hid3_size) // 48
+        log_vars = tf.get_variable('logvars', (logvar_speed, self.act_dim), tf.float32,
+                                   tf.constant_initializer(0.0))
+        self.log_vars = tf.reduce_sum(log_vars, axis=0) - 1.0
 
     def _policy_nn_sigma(self):
         # units_layer_1 = 10 * self.obs_dim
@@ -122,21 +133,9 @@ class ProximalPolicy:
         Reparametrization trick.
         :return: 
         """
-        self.sample = self.means + tf.exp(self.log_vars / 2.0) * \
-                       tf.random_normal(shape=(self.act_dim,))
+        self.sample = (self.means + tf.exp(self.log_vars / 2.0) *
+                       tf.random_normal(shape=(self.act_dim,)))
         # self.sample = tf.clip_by_value(self.sample, self.action_space.low[0], self.action_space.high[0])
-
-    def _trace_init(self):
-        """
-        Initialize the trace vector; same structure with the gradients
-        :return:
-        """
-        tvs = tf.trainable_variables()
-        self.trace = [(tf.Variable(tf.zeros_like(tv), trainable=False)) for tv in tvs]
-        self.identity = tf.Variable(1.0, trainable = False, name='identity')
-        # reset ops
-        self.trace_zero = [self.trace[i].assign(tf.zeros_like(tv)) for i, tv in enumerate(tvs)]
-        self.identity_init = [self.identity.assign(1.0)]
 
     def _loss(self):
         """
@@ -147,23 +146,15 @@ class ProximalPolicy:
             4) Entropy for encouraging exploration
         See: https://arxiv.org/pdf/1707.02286.pdf
         """
-        loss = -tf.reduce_mean(tf.exp(self.logp - self.logp_old)) # p/p_old
+        loss = -tf.reduce_mean(self.advantages_ph * tf.exp(self.logp - self.logp_old)) # p/p_old
         loss += tf.reduce_mean(self.beta_ph * self.kl)
         loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
         # loss -= self.entropy # encouraged, needs multiplier?
         self.loss = loss
 
-    def _trace(self):
-        self.optimizer = tf.train.AdamOptimizer(self.lr_ph)
-        self.grads = self.optimizer.compute_gradients(self.loss, tf.trainable_variables())
-        self.identity_update = [self.identity.assign(self.identity*self.discount)]
-        # self.identity = tf.Print(self.identity, [self.identity], message ='identity: ')
-        self.trace_update = [self.trace[i].assign(self.discount * self.lamb * self.trace[i] + self.identity * grad[0]) for i, grad in
-                             enumerate(self.grads)]
-
     def _train(self):
-        self.train = self.optimizer.apply_gradients(
-            [(self.trace[i]*self.advantages_ph, grad[1]) for i, grad in enumerate(self.grads)])
+        self.optimizer = tf.train.AdamOptimizer(self.lr_ph)
+        self.train = self.optimizer.minimize(self.loss)
 
     def _init_session(self):
         self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
@@ -172,9 +163,6 @@ class ProximalPolicy:
     def get_sample(self, obs):
         feed_dict = {self.obs_ph: obs}
         return self.sess.run(self.sample, feed_dict=feed_dict)
-
-    def init_trace(self):
-        self.sess.run(self.trace_zero)
 
     def update(self, observes, actions, advantages):
         """
@@ -192,22 +180,25 @@ class ProximalPolicy:
         feed_dict[self.logvars_old_ph] = logvars_old
         feed_dict[self.means_old_ph] = means_old
 
-        # update phase, first the trace, then the train
-        self.sess.run(self.trace_update, feed_dict)
-        # self.sess.run(self.identity_update)
-        self.sess.run(self.train, feed_dict)
-
-        loss, kl, entropy = self.sess.run([self.loss, self.kl, self.entropy], feed_dict)
+        loss, kl, entropy = 0, 0, 0
+        for e in range(self.epochs):
+            # TODO: need to improve data pipeline - re-feeding data every epoch
+            self.sess.run(self.train, feed_dict)
+            loss, kl, entropy = self.sess.run([self.loss, self.kl, self.entropy], feed_dict)
+            if kl > self.kl_target * 4:  # early stopping if D_KL diverges badly
+                break
+        # self.sess.run(self.train, feed_dict)
+        # loss, kl, entropy = self.sess.run([self.loss, self.kl, self.entropy], feed_dict)
 
         # TODO: too many "magic numbers" in next 8 lines of code, need to clean up
         if kl > self.kl_target * 2:  # servo beta to reach D_KL target
-            self.beta = np.minimum(32, 2.0 * self.beta)  # max clip beta
-            if self.beta > 16 and self.lr_multiplier > 0.1:
-                self.lr_multiplier /= 2.0
+            self.beta = np.minimum(35, 1.5 * self.beta)  # max clip beta
+            if self.beta > 30 and self.lr_multiplier > 0.1:
+                self.lr_multiplier /= 1.5
         elif kl < self.kl_target / 2:
-            self.beta = np.maximum(1 / 32, self.beta / 2)  # min clip beta
-            if self.beta < (1/16) and self.lr_multiplier < 10:
-                self.lr_multiplier *= 2
+            self.beta = np.maximum(1 / 35, self.beta / 1.5)  # min clip beta
+            if self.beta < (1 / 30) and self.lr_multiplier < 10:
+                self.lr_multiplier *= 1.5
         # print(self.beta)
         return loss, kl, entropy, self.beta
 

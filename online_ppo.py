@@ -18,6 +18,8 @@ import csv
 import inspect
 import shutil
 
+from utils import Scaler
+
 from Policy.PPOPolicy import ProximalPolicy
 from ValueFunc.BaselineValueFunc import ValueFunc
 
@@ -48,9 +50,12 @@ class Experiment:
         self.lamb = lamb
         self.animate = animate
         self.killer = GracefulKiller()
-        self.policy = ProximalPolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, discount=discount,
-                                     lamb=lamb)
-        self.value_func = ValueFunc(self.obs_dim, discount=discount, lamb=lamb)
+        # self.policy = ProximalPolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, discount=discount,
+        #                              lamb=lamb)
+        self.policy = ProximalPolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, discount=discount, lamb=lamb)
+        # using MC return would be more helpful
+        self.value_func = ValueFunc(self.obs_dim, discount=discount)
+        # self.value_func = ValueFunc(self.obs_dim, discount=discount, lamb=1)
 
         # save copies of file
         shutil.copy(inspect.getfile(self.policy.__class__), OUTPATH)
@@ -65,7 +70,8 @@ class Experiment:
 
     def init_scaler(self):
         print('fitting scaler')
-        self.scaler = sklearn.preprocessing.StandardScaler()
+        # self.scaler = sklearn.preprocessing.StandardScaler()
+        self.scaler = Scaler(self.obs_dim)
         observation_samples = []
         for i in range(5):
             observation = []
@@ -81,12 +87,17 @@ class Experiment:
             observation_samples.append(observation)
         observation_samples = np.concatenate(observation_samples, axis=0)
         # print(observation_samples.shape)
-        self.scaler.fit(observation_samples)
+        # self.scaler.fit(observation_samples)
+        self.scaler.update(observation_samples)
 
     def normalize_obs(self, obs):
-        return self.scaler.transform(obs)
+        scale, offset = self.scaler.get()
+        obs_scaled = (obs-offset)*scale
+        self.scaler.update(obs.astype(np.float64).reshape((1, -1)))
+        # return self.scaler.transform(obs)
+        return obs_scaled
 
-    def run_one_epsisode(self, save=True, train=True, animate=False):
+    def run_one_episode(self, save=True, train_policy=True, train_value_func = True, animate=False):
         obs = self.env.reset()
         obs = obs.astype(np.float64).reshape((1, -1))
         obs = self.normalize_obs(obs)
@@ -116,13 +127,19 @@ class Experiment:
                 reward = np.asscalar(reward)
             log['rewards'].append(reward)
 
-            if train:
-                # TD residual
-                advantage = reward*(1-self.discount) + self.discount * self.value_func.predict(obs_new) - self.value_func.predict(obs)
-                advantage = advantage.astype(np.float64).reshape((1,))
+            # TD residual
+            # devise a gae equivalent of eligibility trace
+            state_value = reward + self.discount * self.value_func.predict(obs_new)
+            advantage = state_value - self.value_func.predict(obs)
 
+            state_value = state_value.astype(np.float64).reshape((1,))
+            advantage = advantage.astype(np.float64).reshape((1,))
+            if train_policy:
                 policy_loss, kl, entropy, beta = self.policy.update(obs, action, advantage)
-                value_func_loss = self.value_func.update(obs, advantage)
+            if train_value_func:
+                value_func_loss = self.value_func.update(obs, state_value)
+
+            if train_policy and train_value_func:
                 log['policy_loss'].append(policy_loss)
                 log['kl'].append(kl)
                 log['entropy'].append(entropy)
@@ -144,11 +161,21 @@ class Experiment:
         ep_rewards = []
         for i in range(self.num_iterations):
             # trace vectors are emptied at the beginning of each episode
-            self.policy.init_trace()
-            self.value_func.init_trace()
+
+            # self.policy.init_trace()
+            # self.value_func.init_trace()
+
+            # train value_func only
+            for _ in range(20):
+                self.run_one_episode(save=False, train_policy=False, train_value_func=True, animate=self.animate)
+
+            # # train policy only
+            # for _ in range(5):
+            #     self.run_one_epsisode(save=False, train_policy=True,
+            #                           train_value_func=False, animate=self.animate)
 
             # run (and train) one trajectory
-            log = self.run_one_epsisode(save=i == (self.num_iterations - 1), train=True, animate=self.animate)
+            log = self.run_one_episode(save=i == (self.num_iterations - 1), animate=self.animate)
 
             # compute statistics such as mean and std
             log['steps'] = len(log['rewards'])

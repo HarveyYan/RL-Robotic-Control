@@ -20,13 +20,14 @@ class ValueFunc:
             self.obs_ph = tf.placeholder(tf.float32, (None, self.obs_dim), 'obs_ph')
             self.advantages_ph = tf.placeholder(tf.float32, (None,), 'advantages_ph')
 
-            units = self.obs_dim * 10
-            out = tf.layers.dense(self.obs_ph, units, tf.nn.relu,
+            units_layer_1 = 10 * self.obs_dim
+            units_layer_2 = int(np.sqrt(units_layer_1 * 1))  # geometirc mean of first and last layers
+            out = tf.layers.dense(self.obs_ph, units_layer_1, tf.nn.relu,
                                   kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                   name="valfunc_d1")
-            # out = tf.layers.dense(self.out, units, tf.nn.relu,
-            #                       kernel_initializer=tf.contrib.layers.xavier_initializer(),
-            #                       name="valfunc_d1")
+            out = tf.layers.dense(out, units_layer_2, tf.nn.relu,
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                                  name="valfunc_d2")
             out = tf.layers.dense(out, 1,
                                   kernel_initializer=tf.contrib.layers.xavier_initializer(),
                                   name='output')
@@ -44,7 +45,7 @@ class ValueFunc:
             self.trace_zero = [self.trace[i].assign(tf.zeros_like(tv)) for i, tv in enumerate(tvs)]
             self.identity_init = [self.identity.assign(1.0)]
 
-            self.optimizer = tf.train.AdamOptimizer(1e-4)
+            self.optimizer = tf.train.AdamOptimizer(1e-3)
             self.grads = self.optimizer.compute_gradients(self.loss, tf.trainable_variables())
             self.identity_update = [self.identity.assign(self.identity*self.discount)]
             self.trace_update = [self.trace[i].assign(self.discount * self.lamb * self.trace[i] + grad[0]) for i, grad
