@@ -18,6 +18,7 @@ import csv
 import inspect
 import shutil
 import pickle
+from matplotlib import ticker
 
 from utils import Scaler
 
@@ -46,10 +47,12 @@ class GracefulKiller:
 class Experiment:
 
     def __init__(self, env_name, discount, num_iterations, lamb, animate, kl_target, demonstrate):
+        self.env_name = env_name
         self.env = gym.make(env_name)
-        self.env = gym.wrappers.FlattenDictWrapper(self.env, ['observation', 'desired_goal', 'achieved_goal'])
+        if env_name == "FetchReach-v0":
+            self.env = gym.wrappers.FlattenDictWrapper(self.env, ['observation', 'desired_goal', 'achieved_goal'])
         gym.spaces.seed(1234)
-        self.obs_dim = self.env.observation_space.shape[0]
+        self.obs_dim = self.env.observation_space.shape[0] + 1 # adding time step as feature
         self.act_dim = self.env.action_space.shape[0]
         self.discount = discount
         self.num_iterations = num_iterations
@@ -89,11 +92,17 @@ class Experiment:
             observation.append(obs)
             obs = obs.astype(np.float64).reshape((1, -1))
             done = False
+            step = 0
             while not done:
+                obs = np.append(obs, [[step]], axis=1)  # add time step feature
                 action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
-                obs_new, reward, done, _ = self.env.step(action.reshape(-1))
+                if self.env_name == "FetchReach-v0":
+                    obs_new, reward, done, _ = self.env.step(action.reshape(-1))
+                else:
+                    obs_new, reward, done, _ = self.env.step(action)
                 observation.append(obs_new)
                 obs = obs_new.astype(np.float64).reshape((1, -1))
+                step += 1e-3
             observation_samples.append(observation)
         observation_samples = np.concatenate(observation_samples, axis=0)
         # print(observation_samples.shape)
@@ -103,7 +112,6 @@ class Experiment:
         scale, offset = self.scaler.get()
         obs_scaled = (obs-offset)*scale
         self.scaler.update(obs.astype(np.float64).reshape((1, -1)))
-        # return self.scaler.transform(obs)
         return obs_scaled
 
     def run_one_episode(self):
@@ -124,16 +132,20 @@ class Experiment:
                 self.env.render()
             obs = obs.astype(np.float64).reshape((1, -1))
             obs = self.normalize_obs(obs)
+            obs = np.append(obs, [[step]], axis=1)  # add time step feature
             observes.append(obs)
             action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
             actions.append(action)
-            obs_new, reward, done, _ = self.env.step(action.reshape(-1))
+            if self.env_name == "FetchReach-v0":
+                obs_new, reward, done, _ = self.env.step(action.reshape(-1))
+            else:
+                obs_new, reward, done, _ = self.env.step(action)
             if not isinstance(reward, float):
                 reward = np.asscalar(reward)
             rewards.append(reward)
 
             obs = obs_new
-            step += 0.001
+            step += 0.003
 
         return np.concatenate(observes), np.concatenate(actions), np.array(rewards)
 
@@ -234,18 +246,22 @@ class Experiment:
         self.value_func.save(OUTPATH)
         self.scaler.save(OUTPATH)
 
+        scale_x = 20
+        ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
         plt.figure(figsize=(12,9))
-        plt.subplot(121)
+        ax1 = plt.subplot(121)
         plt.xlabel('episodes')
-        plt.xticks(np.arange(len(ep_steps)), np.arange(len(ep_steps))*self.episodes)
+        # plt.xticks(np.arange(len(ep_steps)), np.arange(len(ep_steps))*self.episodes)
         plt.ylabel('steps')
         plt.plot(ep_steps)
+        ax1.xaxis.set_major_formatter(ticks_x)
 
-        plt.subplot(122)
+        ax2 = plt.subplot(122)
         plt.xlabel('episodes')
         plt.xticks(np.arange(len(ep_rewards)), np.arange(len(ep_rewards)) * self.episodes)
         plt.ylabel('episodic rewards')
         plt.plot(ep_rewards)
+        ax2.xaxis.set_major_formatter(ticks_x)
 
         plt.savefig(OUTPATH + 'train.png')
 

@@ -5,6 +5,8 @@ import numpy as np
 from sklearn.utils import shuffle
 import os
 
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+
 class l2TargetValueFunc:
     def __init__(self, obs_dim, epochs=10):
         self.obs_dim = obs_dim
@@ -47,7 +49,7 @@ class l2TargetValueFunc:
             self.saver = tf.train.Saver()
             self.train = optimizer.minimize(self.loss)
             self.init = tf.global_variables_initializer()
-        self.sess = tf.Session(graph=self.g)
+        self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
         self.sess.run(self.init)
 
     def update(self, x, y):
