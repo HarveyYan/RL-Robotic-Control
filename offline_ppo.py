@@ -46,7 +46,7 @@ class GracefulKiller:
 
 class Experiment:
 
-    def __init__(self, env_name, discount, num_iterations, lamb, animate, kl_target, demonstrate):
+    def __init__(self, env_name, discount, num_iterations, lamb, animate, kl_target, show):
         self.env_name = env_name
         self.env = gym.make(env_name)
         if env_name == "FetchReach-v0":
@@ -67,7 +67,7 @@ class Experiment:
         self.value_func = l2TargetValueFunc(self.obs_dim, epochs=10)
         # self.value_func = ValueFunc(self.obs_dim, discount=discount, lamb=1)
 
-        if not demonstrate:
+        if not show:
             # save copies of file
             shutil.copy(inspect.getfile(self.policy.__class__), OUTPATH)
             shutil.copy(inspect.getfile(self.value_func.__class__), OUTPATH)
@@ -246,14 +246,15 @@ class Experiment:
         self.value_func.save(OUTPATH)
         self.scaler.save(OUTPATH)
 
-        scale_x = 20
-        ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
+
         plt.figure(figsize=(12,9))
         ax1 = plt.subplot(121)
         plt.xlabel('episodes')
         # plt.xticks(np.arange(len(ep_steps)), np.arange(len(ep_steps))*self.episodes)
         plt.ylabel('steps')
         plt.plot(ep_steps)
+        scale_x = 20
+        ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
         ax1.xaxis.set_major_formatter(ticks_x)
 
         ax2 = plt.subplot(122)
@@ -261,6 +262,8 @@ class Experiment:
         plt.xticks(np.arange(len(ep_rewards)), np.arange(len(ep_rewards)) * self.episodes)
         plt.ylabel('episodic rewards')
         plt.plot(ep_rewards)
+        scale_x = 20
+        ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
         ax2.xaxis.set_major_formatter(ticks_x)
 
         plt.savefig(OUTPATH + 'train.png')
@@ -273,8 +276,7 @@ class Experiment:
         self.policy.load(load_from + 'policy/policy.pl')
         self.value_func.load(load_from + 'value_func/value_func.pl')
 
-    def demonstrate_agent(self):
-        load_from = "./results/Hopper-v2/offline-PPO/2018-04-06_12_58_36/"
+    def demonstrate_agent(self, load_from):
         self.load_model(load_from)
         with open(load_from + "scaler.pkl", 'rb') as file:
             self.scaler = pickle.load(file)
@@ -288,27 +290,36 @@ class Experiment:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-e', '--env_name', type=str, help='OpenAI Gym environment name', default="HumanoidStandup-v2")
+    parser.add_argument('env_name', type=str, help='OpenAI Gym environment name')
     parser.add_argument('-n', '--num_iterations', type=int, help='Number of episodes to run', default=1000)
     parser.add_argument('-d', '--discount', type=float, help='Discount factor', default=0.995)
     parser.add_argument('-k', '--kl_target', type=float, help='KL target', default=0.003)
     parser.add_argument('-l', '--lamb', type=float, help='Lambda for Generalized Advantage Estimation', default=0.98)
     parser.add_argument('-a', '--animate', type=bool, help='Render animation', default=False)
-    parser.add_argument('-s', '--demonstrate', type=bool, help='Demonstrate a trainied agent', default=False)
+    parser.add_argument('-s', '--show', type=bool, help='Demonstrate a trainied agent', default=False)
+    parser.add_argument('--show_dir', type=str, help='The saved model parameters to a trained agent')
+    parser.add_argument('-m', '--message', type=str, help='Message/identifier for experiments', default="Default")
     args = parser.parse_args()
 
-    if not args.demonstrate:
-        print('training an agent anew')
+    if not args.show:
+        print('training an agent anew, in environment: {}'.format(args.env_name))
         global OUTPATH
-        OUTPATH = './results/' + args.env_name + '/' + 'offline-PPO/' + date_id
+        OUTPATH = './results/offline-PPO/' + args.env_name + '_' + args.message + '/'  + date_id
         if not os.path.exists(OUTPATH):
             os.makedirs(OUTPATH)
+        del args.message
+        del args.show_dir
         expr = Experiment(**vars(args))
         expr.run_expr()
     else:
-        print('loading an agent: Hooper-v2')
         args.animate = True
-        args.env_name = "Hopper-v2"
+        print('loading an agent: {}'.format(args.env_name))
+        del args.message
+        if args.show_dir is None:
+            print('Needs to specify --show_dir when --show is active')
+            exit()
+        show_dir = args.show_dir # e.g. "./results/Hopper-v2/offline-PPO/2018-04-06_12_58_36/"
+        del show_dir
         expr = Experiment(**vars(args))
-        expr.demonstrate_agent()
+        expr.demonstrate_agent(show_dir)
 

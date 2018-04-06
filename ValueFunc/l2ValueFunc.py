@@ -30,17 +30,13 @@ class l2TargetValueFunc:
             self.lr = 1e-2 / np.sqrt(hid2_size)  # 1e-3 empirically determined
             # 3 hidden layers with tanh activations
             out = tf.layers.dense(self.obs_ph, hid1_size, tf.nn.relu,
-                                  kernel_initializer=tf.random_normal_initializer(
-                                      stddev=np.sqrt(1 / self.obs_dim)), name="h1")
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h1")
             out = tf.layers.dense(out, hid2_size, tf.nn.relu,
-                                  kernel_initializer=tf.random_normal_initializer(
-                                      stddev=np.sqrt(1 / hid1_size)), name="h2")
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h2")
             out = tf.layers.dense(out, hid3_size, tf.nn.relu,
-                                  kernel_initializer=tf.random_normal_initializer(
-                                      stddev=np.sqrt(1 / hid2_size)), name="h3")
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h3")
             out = tf.layers.dense(out, 1,
-                                  kernel_initializer=tf.random_normal_initializer(
-                                      stddev=np.sqrt(1 / hid3_size)), name='output')
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name='output')
             self.out = tf.squeeze(out)  # remove dimensions of size 1 from the shape
             # self.out = tf.Print(out, [out], message='value prediction: ')
             # gradient ascent
