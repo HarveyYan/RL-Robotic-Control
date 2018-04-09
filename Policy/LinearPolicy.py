@@ -6,7 +6,7 @@ gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
 
 class LinearPolicy:
 
-    def __init__(self, obs_dim, act_dim, action_space, kl_target, discount=1.0, lamb=0.8, ):
+    def __init__(self, obs_dim, act_dim, action_space, kl_target, discount=1.0, lamb=0.5):
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.action_space = action_space
@@ -14,7 +14,7 @@ class LinearPolicy:
         self.lamb = lamb
         self.kl_target = kl_target
         self.eta = 50 # hinge loss multiplier, between actual kl and kl target
-        self.beta = 1.0 # kl penalty term multiplier
+        self.beta = 10.0 # kl penalty term multiplier
         self.lr = 1e-4
         self.lr_multiplier = 1.0  # dynamically adjust lr when D_KL out of control
         self._build_graph()
@@ -46,24 +46,34 @@ class LinearPolicy:
         self.act_ph = tf.placeholder(tf.float32, (None, self.act_dim), 'act')
 
         self.means_old_ph = tf.placeholder(tf.float32, (None, self.act_dim), 'old_means')
-        self.logvars_old_ph = tf.placeholder(tf.float32, (None, self.act_dim), 'old_logvars')
+        self.logvars_old_ph = tf.placeholder(tf.float32, (self.act_dim,), 'old_logvars')
 
         self.beta_ph = tf.placeholder(tf.float32, (), 'kl_penalty_multiplier')
         self.eta_ph = tf.placeholder(tf.float32, (), 'hinge_penalty_multiplier')
         self.lr_ph = tf.placeholder(tf.float32, (), 'learning_rate')
 
     def _policy_nn_mu(self):
-        out = tf.layers.dense(self.obs_ph, self.act_dim,
-                              kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                              name='output_mu')
-        self.means = out# tf.Print(out, [out], message='Mean: ', summarize=100)
+        hid1_size = self.obs_dim * 10  # 10 empirically determined
+        hid3_size = self.act_dim * 10  # 10 empirically determined
+        hid2_size = int(np.sqrt(hid1_size * hid3_size))
+        # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
+        self.lr = 9e-8 / np.sqrt(hid2_size)  # 9e-4 empirically determined
+        # 3 hidden layers with tanh activations
+        # out = tf.layers.dense(self.obs_ph, hid1_size,
+        #                       kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h1")
+        # out = tf.layers.dense(out, hid2_size,
+        #                       kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h2")
+        # out = tf.layers.dense(out, hid3_size,
+        #                       kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h3")
+        self.means = tf.layers.dense(self.obs_ph, self.act_dim,
+                                     kernel_initializer=tf.contrib.layers.xavier_initializer(), name="means")
 
     def _policy_nn_sigma(self):
-        out = tf.layers.dense(self.obs_ph, self.act_dim, tf.tanh,
-                              kernel_initializer=tf.zeros_initializer(),
-                              name='output_sigma')
+        logvar_speed = 6
+        log_vars = tf.get_variable('logvars', (logvar_speed, self.act_dim), tf.float32,
+                                   tf.constant_initializer(0.0))
+        self.log_vars = tf.reduce_sum(log_vars, axis=0) - 1.0
         # assuming a diagonal covariance for the multi-variate gaussian distribution
-        self.log_vars = out #tf.Print(out, [out], message='log vars: ', summarize=100)
 
     def _log_prob(self):
         logp = -0.5 * tf.reduce_sum(self.log_vars)  # probability of a trajectory
@@ -129,7 +139,6 @@ class LinearPolicy:
         loss = -tf.reduce_mean(tf.exp(self.logp - self.logp_old)) # p/p_old
         loss += tf.reduce_mean(self.beta_ph * self.kl)
         loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
-        loss -= self.entropy # encouraged, needs multiplier?
         self.loss = loss
 
     def _trace(self):
@@ -170,7 +179,7 @@ class LinearPolicy:
         feed_dict[self.logvars_old_ph] = logvars_old
         feed_dict[self.means_old_ph] = means_old
 
-        # update phase, first the trace, then the train
+        # update phase, first the trace, then the train op
         self.sess.run(self.trace_update, feed_dict)
         self.sess.run(self.train, feed_dict)
 

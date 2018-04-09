@@ -76,22 +76,22 @@ class NoTracePolicy:
         self.log_vars = tf.reduce_sum(log_vars, axis=0) - 1.0
 
     def _policy_nn_sigma(self):
-        units_layer_1 = 10 * self.obs_dim
-        units_layer_2 = int(np.sqrt(units_layer_1 * self.act_dim))  # geometirc mean of first and last layers
-        out = tf.layers.dense(self.obs_ph, units_layer_1, tf.nn.relu,
-                              kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                              name='dense_sigma_1')
-        out = tf.layers.dense(out, units_layer_2, tf.nn.relu,
-                              kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                              name='dense_sigma_2')
-        out = tf.layers.dense(out, self.act_dim,
-                              kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                              name='output_sigma')
+        # units_layer_1 = 10 * self.obs_dim
+        # units_layer_2 = int(np.sqrt(units_layer_1 * self.act_dim))  # geometirc mean of first and last layers
+        # out = tf.layers.dense(self.obs_ph, units_layer_1, tf.nn.relu,
+        #                       kernel_initializer=tf.contrib.layers.xavier_initializer(),
+        #                       name='dense_sigma_1')
+        # out = tf.layers.dense(out, units_layer_2, tf.nn.relu,
+        #                       kernel_initializer=tf.contrib.layers.xavier_initializer(),
+        #                       name='dense_sigma_2')
+        # out = tf.layers.dense(out, self.act_dim,
+        #                       kernel_initializer=tf.contrib.layers.xavier_initializer(),
+        #                       name='output_sigma')
         # assuming a diagonal covariance for the multi-variate gaussian distribution
-        # logvar_speed = 6
-        # log_vars = tf.get_variable('logvars', (logvar_speed, self.act_dim), tf.float32,
-        #                            tf.constant_initializer(0.0))
-        self.log_vars = out# tf.reduce_sum(log_vars, axis=0) - 1.0
+        logvar_speed = 6
+        log_vars = tf.get_variable('logvars', (logvar_speed, self.act_dim), tf.float32,
+                                   tf.constant_initializer(0.0))
+        self.log_vars = tf.reduce_sum(log_vars, axis=0) - 1.0
         # self.log_vars = out #tf.Print(out, [out], message='log vars: ', summarize=100)
 
     def _log_prob(self):

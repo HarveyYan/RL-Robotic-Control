@@ -181,6 +181,7 @@ class Experiment:
     def run_expr(self):
         ep_steps = []
         ep_rewards = []
+        ep_entropy = []
         i = 0
         while i < self.num_iterations:
             trajectories = self.run_policy(20)
@@ -188,7 +189,8 @@ class Experiment:
             observes = np.concatenate([t['observes'] for t in trajectories])
             actions = np.concatenate([t['actions'] for t in trajectories])
             mc_returns = np.concatenate([t['mc_return'] for t in trajectories])
-            advantages = np.concatenate([t['td_residual'] for t in trajectories])
+            # advantages = np.concatenate([t['td_residual'] for t in trajectories])
+            advantages = np.concatenate([t['gae'] for t in trajectories])
 
             # normalize advantage estimates
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-6)
@@ -217,6 +219,8 @@ class Experiment:
             print('\n')
             ep_steps.append(log['steps'])
             ep_rewards.append(log['rewards'])
+            ep_entropy.append(log['entropy'])
+
 
             # write to log.csv
             if self.write_header:
@@ -231,9 +235,6 @@ class Experiment:
             # save model weights if stopped manually
             if self.killer.kill_now:
                 if input('Terminate training (y/[n])? ') == 'y':
-                    self.policy.save(OUTPATH)
-                    self.value_func.save(OUTPATH)
-                    self.scaler.save(OUTPATH)
                     break
                 self.killer.kill_now = False
 
@@ -246,23 +247,30 @@ class Experiment:
         self.value_func.save(OUTPATH)
         self.scaler.save(OUTPATH)
 
-
         plt.figure(figsize=(12,9))
-        ax1 = plt.subplot(121)
-        plt.xlabel('episodes')
-        # plt.xticks(np.arange(len(ep_steps)), np.arange(len(ep_steps))*self.episodes)
-        plt.ylabel('steps')
-        plt.plot(ep_steps)
-        scale_x = 20
-        ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
-        ax1.xaxis.set_major_formatter(ticks_x)
+
+        if self.env_name.startswith('Fetch'):
+            ax1 = plt.subplot(121)
+            plt.xlabel('episodes')
+            plt.ylabel('policy entropy')
+            plt.plot(ep_entropy)
+            scale_x = self.episodes
+            ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
+            ax1.xaxis.set_major_formatter(ticks_x)
+        else:
+            ax1 = plt.subplot(121)
+            plt.xlabel('episodes')
+            plt.ylabel('steps')
+            plt.plot(ep_steps)
+            scale_x = self.episodes
+            ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
+            ax1.xaxis.set_major_formatter(ticks_x)
 
         ax2 = plt.subplot(122)
         plt.xlabel('episodes')
-        plt.xticks(np.arange(len(ep_rewards)), np.arange(len(ep_rewards)) * self.episodes)
         plt.ylabel('episodic rewards')
         plt.plot(ep_rewards)
-        scale_x = 20
+        scale_x = self.episodes
         ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
         ax2.xaxis.set_major_formatter(ticks_x)
 

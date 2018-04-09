@@ -9,7 +9,6 @@ His implementation on PPO really helped me a lot.
 import numpy as np
 import gym
 import matplotlib.pyplot as plt
-import sklearn.preprocessing
 import os
 import datetime
 import argparse
@@ -44,7 +43,7 @@ class Experiment:
     def __init__(self, env_name, discount, num_iterations, lamb, animate, kl_target):
         self.env = gym.make(env_name)
         gym.spaces.seed(1234)
-        self.obs_dim = self.env.observation_space.shape[0]
+        self.obs_dim = self.env.observation_space.shape[0] + 1
         self.act_dim = self.env.action_space.shape[0]
         self.discount = discount
         self.num_iterations = num_iterations
@@ -65,12 +64,11 @@ class Experiment:
         self.write_header = True
         print('observation dimension:', self.obs_dim)
         print('action dimension:', self.act_dim)
+        self.scaler = Scaler(self.obs_dim)
         self.init_scaler()
 
     def init_scaler(self):
         print('fitting scaler')
-        # self.scaler = sklearn.preprocessing.StandardScaler()
-        self.scaler = Scaler(self.obs_dim)
         observation_samples = []
         for i in range(5):
             observation = []
@@ -78,28 +76,30 @@ class Experiment:
             observation.append(obs)
             obs = obs.astype(np.float64).reshape((1, -1))
             done = False
+            step = 0
             while not done:
+                obs = np.append(obs, [[step]], axis=1)  # add time step feature
                 action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
                 obs_new, reward, done, _ = self.env.step(action)
                 observation.append(obs_new)
                 obs = obs_new.astype(np.float64).reshape((1, -1))
+                step += 1e-3
             observation_samples.append(observation)
         observation_samples = np.concatenate(observation_samples, axis=0)
         # print(observation_samples.shape)
-        # self.scaler.fit(observation_samples)
         self.scaler.update(observation_samples)
 
     def normalize_obs(self, obs):
         scale, offset = self.scaler.get()
         obs_scaled = (obs-offset)*scale
         self.scaler.update(obs.astype(np.float64).reshape((1, -1)))
-        # return self.scaler.transform(obs)
         return obs_scaled
 
     def run_one_episode(self, save=True, train_policy=True, train_value_func = True, animate=False):
         obs = self.env.reset()
         obs = obs.astype(np.float64).reshape((1, -1))
         obs = self.normalize_obs(obs)
+        obs = np.append(obs, [[0]], axis=1)  # add time step feature
         log = {
             'rewards': [],
             'policy_loss': [],
@@ -119,8 +119,12 @@ class Experiment:
             action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
             # print(action)
             obs_new, reward, done, _ = self.env.step(action)
+
+            step += 1e3
+
             obs_new = obs_new.astype(np.float64).reshape((1, -1))
             obs_new = self.normalize_obs(obs_new)
+            obs_new = np.append(obs_new, [[step]], axis=1)  # add time step feature
 
             if not isinstance(reward, float):
                 reward = np.asscalar(reward)
@@ -147,7 +151,6 @@ class Experiment:
                 log['advantage'].append(advantage)
 
             obs = obs_new
-            step += 0.001
 
         if save:
             self.policy.save(OUTPATH)
@@ -236,7 +239,7 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--discount', type=float, help='Discount factor', default=0.995)
     parser.add_argument('-k', '--kl_target', type=float, help='KL target', default=0.003)
     parser.add_argument('-l', '--lamb', type=float, help='Lambda for Generalized Advantage Estimation', default=0.98)
-    parser.add_argument('-a', '--animate', type=bool, help='Render animation or not', default=False)
+    parser.add_argument('-a', '--animate', type=bool, help='Render animation or not', default=True)
     args = parser.parse_args()
 
     global OUTPATH

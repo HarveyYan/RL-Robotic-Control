@@ -5,7 +5,7 @@ import os
 gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
 
 class LinearValueFunc:
-    def __init__(self, obs_dim, discount=1.0, lamb=0.4):
+    def __init__(self, obs_dim, discount=1.0, lamb=1.0):
         self.obs_dim = obs_dim
         self.epochs = 10
         self.discount = discount
@@ -20,12 +20,21 @@ class LinearValueFunc:
             self.obs_ph = tf.placeholder(tf.float32, (None, self.obs_dim), 'obs_ph')
             self.advantages_ph = tf.placeholder(tf.float32, (None,), 'advantages_ph')
 
+            hid1_size = self.obs_dim * 10  # 10 chosen empirically on 'Hopper-v1'
+            hid3_size = 5  # 5 chosen empirically on 'Hopper-v1'
+            hid2_size = int(np.sqrt(hid1_size * hid3_size))
+            # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
+            self.lr = 1e-4 / np.sqrt(hid2_size)  # 1e-3 empirically determined
+            # 3 hidden layers with tanh activations
             out = tf.layers.dense(self.obs_ph, 1,
-                                  kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                                  name='output')
-
-            # out = tf.Print(out, [out], message='out: ')
-            self.out = tf.squeeze(out)  # remove dimensions of size 1 from the shape
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h1")
+            # out = tf.layers.dense(out, hid2_size,
+            #                       kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h2")
+            # out = tf.layers.dense(out, hid3_size,
+            #                       kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h3")
+            # out = tf.layers.dense(out, 1,
+            #                       kernel_initializer=tf.contrib.layers.xavier_initializer(), name='output')
+            self.out = tf.squeeze(out)  # remove dimensions of size 1 from the shapes
             # self.out = tf.Print(out, [out], message='value prediction: ')
             # gradient ascent
             self.loss = -self.out
@@ -37,7 +46,7 @@ class LinearValueFunc:
             self.trace_zero = [self.trace[i].assign(tf.zeros_like(tv)) for i, tv in enumerate(tvs)]
             self.identity_init = [self.identity.assign(1.0)]
 
-            self.optimizer = tf.train.AdamOptimizer(1e-3)
+            self.optimizer = tf.train.AdamOptimizer(self.lr)
             self.grads = self.optimizer.compute_gradients(self.loss, tf.trainable_variables())
             self.identity_update = [self.identity.assign(self.identity*self.discount)]
             self.trace_update = [self.trace[i].assign(self.discount * self.lamb * self.trace[i] + grad[0]) for i, grad
