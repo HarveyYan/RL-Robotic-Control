@@ -58,3 +58,37 @@ class Scaler(object):
     def save(self, saveto):
         with open(saveto+"scaler.pkl", 'wb') as output:
             pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
+
+
+class Buffer:
+
+    def __init__(self, buffer_size, obs_dim, act_dim):
+        self.batch_size = buffer_size
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.obs = None
+        self.act = None
+        self.rewards = None
+
+    def append(self, trajectories):
+        if self.obs is None:
+            self.obs = np.concatenate([t['observes'] for t in trajectories])
+            self.act = np.concatenate([t['actions'] for t in trajectories])
+            self.rewards = np.concatenate([t['rewards'] for t in trajectories])
+        else:
+            np.append(np.concatenate([t['observes'] for t in trajectories]),self.obs) # append (E*T, obs_dim)
+            np.append(np.concatenate([t['actions'] for t in trajectories]), self.act)
+            np.append(np.concatenate([t['rewards'] for t in trajectories]), self.rewards)
+
+        if self.obs.shape[0] > self.batch_size:
+            cutoff = int(self.batch_size*np.random.random())
+            self.obs = self.obs[:cutoff]
+            self.act = self.act[:cutoff]
+            self.rewards = self.rewards[:cutoff]
+
+    def sample(self, num_samples):
+        total_samples = self.obs.shape[0]
+        permute = np.random.permutation(np.linspace(0, total_samples - 1, total_samples, dtype=int))
+        permute = permute[:num_samples]
+        return self.obs[permute], self.act[permute], self.rewards[permute]
+
