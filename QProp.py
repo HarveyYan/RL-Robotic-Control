@@ -209,7 +209,7 @@ class Experiment:
                 t['gae'] = self.discounted_sum(t['td_residual'], self.discount * self.lamb)
             advantages = np.concatenate([t['gae'] for t in trajectories])
 
-            """compute control variate"""
+            """compute control variate"""""
             cv = self.critic.get_contorl_variate(self.policy, observes, actions)
 
 
