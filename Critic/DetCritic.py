@@ -140,7 +140,35 @@ class DeterministicCritic:
 
         return loss_mean, loss_std
 
+    def get_contorl_variate(self, policy, observes, actions):
+        """
+        observes should be in the shape (#samples,obs_dim)
+        :param policy:
+        :param observes:
+        :return:
+        """
+        expected_actions = policy.mean(observes)
+        term_mul = actions - expected_actions
+        with self.critic_sess.as_default():
+            graph = self.critic_sess.graph
+            grads = tf.gradients(graph.get_tensor_by_name("value:0"), graph.get_tensor_by_name("act_ph:0")).eval(feed_dict={
+                graph.get_tensor_by_name('obs_ph:0'): observes,
+                graph.get_tensor_by_name('act_ph:0'): expected_actions
+            })
+            # grads are of shape (#samples, act_dim)
+        cv = np.matmul(grads, term_mul.T)
+        return cv
 
-# if __name__ == "__main__":
-#     critic = DeterministicCritic(1,2,0.8,'./tmp/')
-#     critic.fit(None, None, None)
+
+if __name__ == "__main__":
+    critic = DeterministicCritic(1,2,0.8,'./tmp/')
+    # critic.fit(None, None, None)
+    with critic.critic_sess.as_default():
+        graph = critic.critic_sess.graph
+        grad = tf.gradients(graph.get_tensor_by_name("value:0"),
+                     graph.get_tensor_by_name("act_ph:0"))[0].eval(feed_dict={
+            graph.get_tensor_by_name('act_ph:0'): [[1, 2]],
+            graph.get_tensor_by_name('obs_ph:0'): [[1]]
+        })
+        print(grad)
+        print(grad.shape)
