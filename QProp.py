@@ -189,16 +189,18 @@ class Experiment:
             trajectories = self.run_policy(20)
             # add to experience replay buffer
             self.buffer.append(trajectories)
+            print('buffer size:', self.buffer.size())
+
             i += len(trajectories)
 
             # for E=20, T=50, the total number of samples would be 1000
             # In future needs to account for not uniform time steps per episode.
             # e.g. in Hopper-v2 environment not every episode has same time steps
-            E = len(trajectories)
-            T = trajectories[0]['observes'].shape[0]
+            # E = len(trajectories)
+            num_samples = np.sum([len(t['rewards']) for t in trajectories])
 
             """train critic"""
-            self.critic.fit(self.policy, self.buffer, epochs=10, num_samples=E*T) # take E*T samples, so in total E*T gradient steps
+            self.critic.fit(self.policy, self.buffer, epochs=10, num_samples=num_samples) # take E*T samples, so in total E*T gradient steps
 
             """calculation of episodic discounted return only needs rewards"""
             mc_returns = np.concatenate([self.discounted_sum(t['rewards'], self.discount) for t in trajectories])
@@ -220,7 +222,7 @@ class Experiment:
             cv = self.critic.get_contorl_variate(self.policy, observes, actions)
 
             """conservative control variate"""
-            eta = [1 if i>0 else 0 for i in advantages*cv]
+            eta = [1 if i > 0 else 0 for i in advantages*cv]
 
             """center learning signal"""
             # check that advantages and CV should be of size E*T

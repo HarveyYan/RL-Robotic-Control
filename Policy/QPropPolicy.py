@@ -59,7 +59,7 @@ class QPropPolicy:
         hid3_size = self.act_dim * 10  # 10 empirically determined
         hid2_size = int(np.sqrt(hid1_size * hid3_size))
         # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
-        self.lr = 9e-4 / np.sqrt(hid2_size)  # 9e-4 empirically determined
+        self.lr = 9e-2 / np.sqrt(hid2_size)  # 9e-4 empirically determined
         # 3 hidden layers with tanh activations
         out = tf.layers.dense(self.obs_ph, hid1_size, tf.nn.relu,
                               kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h1")
@@ -129,7 +129,9 @@ class QPropPolicy:
         loss += tf.reduce_mean(self.beta_ph * self.kl)
         loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
         """DDPG loss definition"""
-        loss -= tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
+        # ctrl_taylor_ph is of shape (#samples, act_dim), means is of shape (#samples, act_dim)
+        loss -= tf.reduce_mean(tf.reduce_sum(tf.multiply(self.ctrl_taylor_ph, self.means), axis=1))
+        # loss -= tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
         self.loss = loss
 
     def _train(self):

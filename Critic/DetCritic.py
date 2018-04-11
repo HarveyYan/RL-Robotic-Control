@@ -163,8 +163,9 @@ class DeterministicCritic:
                 graph.get_tensor_by_name('act_ph:0'): expected_actions
             })
             # grads are of shape (#samples, act_dim)
-        cv = np.matmul(grads, term_mul.T)
-        return np.diag(cv)
+        # cv = np.diag(np.matmul(grads, term_mul.T))
+        cv = np.sum(np.multiply(grads, term_mul), axis=1)
+        return cv
 
     def get_taylor_eval(self, policy, observes):
         expected_actions = policy.mean(observes)

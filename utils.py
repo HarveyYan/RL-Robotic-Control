@@ -5,6 +5,10 @@ Written by Patrick Coady (pat-coady.github.io)
 """
 import numpy as np
 import pickle
+import matplotlib.pyplot as plt
+from matplotlib import ticker
+import os
+import pandas as pd
 
 
 class Scaler(object):
@@ -53,10 +57,10 @@ class Scaler(object):
 
     def get(self):
         """ returns 2-tuple: (scale, offset) """
-        return 1/(np.sqrt(self.vars) + 0.1)/3, self.means
+        return 1 / (np.sqrt(self.vars) + 0.1) / 3, self.means
 
     def save(self, saveto):
-        with open(saveto+"scaler.pkl", 'wb') as output:
+        with open(saveto + "scaler.pkl", 'wb') as output:
             pickle.dump(self, output, pickle.HIGHEST_PROTOCOL)
 
 
@@ -80,18 +84,23 @@ class Buffer:
         :return:
         """
         if self.obs is None:
-            self.obs = np.concatenate([t['observes'] for t in trajectories])   # last tuple doesn't correspond to next observation.
+            self.obs = np.concatenate(
+                [t['observes'] for t in trajectories])  # last tuple doesn't correspond to next observation.
             self.act = np.concatenate([t['actions'] for t in trajectories])
             self.rewards = np.concatenate([t['rewards'] for t in trajectories])
-            self.obs_next = np.concatenate([np.append(t['observes'][1:], np.zeros((1, self.obs_dim)), axis=0) for t in trajectories])
+            self.obs_next = np.concatenate(
+                [np.append(t['observes'][1:], np.zeros((1, self.obs_dim)), axis=0) for t in trajectories])
         else:
-            np.append(np.concatenate([t['observes'] for t in trajectories]),self.obs, axis=0) # append (E*T, obs_dim)
-            np.append(np.concatenate([t['actions'] for t in trajectories]), self.act, axis=0)
-            np.append(np.concatenate([t['rewards'] for t in trajectories]), self.rewards, axis=0)
-            np.append(np.concatenate([np.append(t['observes'][1:], np.zeros((1, self.obs_dim)), axis=0) for t in trajectories]), self.obs_next, axis=0)
+            self.obs = np.append(np.concatenate([t['observes'] for t in trajectories]), self.obs,
+                                 axis=0)  # append (E*T, obs_dim)
+            self.act = np.append(np.concatenate([t['actions'] for t in trajectories]), self.act, axis=0)
+            self.rewards = np.append(np.concatenate([t['rewards'] for t in trajectories]), self.rewards, axis=0)
+            self.obs_next = np.append(np.concatenate(
+                [np.append(t['observes'][1:], np.zeros((1, self.obs_dim)), axis=0) for t in trajectories]),
+                                      self.obs_next, axis=0)
 
         if self.obs.shape[0] > self.buffer_size:
-            cutoff = int(self.buffer_size*np.random.random())
+            cutoff = int(self.buffer_size * np.random.random())
             self.obs = self.obs[:cutoff]
             self.act = self.act[:cutoff]
             self.rewards = self.rewards[:cutoff]
@@ -104,8 +113,52 @@ class Buffer:
         :return: permuted, loose-tied, quadruples.
         """
         total_samples = self.obs.shape[0]
-        num_samples  = min(num_samples, total_samples)
+        num_samples = min(num_samples, total_samples)
         permute = np.random.permutation(np.linspace(0, total_samples - 1, total_samples, dtype=int))
         permute = permute[:num_samples]
         return self.obs[permute], self.act[permute], self.rewards[permute], self.obs_next[permute]
 
+    def size(self):
+        return self.rewards.shape[0]
+
+
+class Plotter:
+
+    def __init__(self, csv_logs, keys, legends):
+        self.dfs = []
+        if type(csv_logs) is list:
+            for log in csv_logs:
+                assert (os.path.exists(log))
+                df = pd.read_csv(log)
+                for key in keys:
+                    assert (key in df.keys())
+                self.dfs.append(df)
+        else:
+            self.dfs = [pd.read_csv(csv_logs)]
+
+        self.keys = keys
+        assert (len(csv_logs) == len(legends))
+        self.legends = legends
+
+    def plot(self, limit_episodes=None):
+        f, axes = plt.subplots(1, len(self.keys))
+        for i, key in enumerate(self.keys):
+            axes[i].set_xlabel('episodes')
+            axes[i].set_ylabel(self.keys[i])
+            scale_x = 20
+            ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
+            axes[i].xaxis.set_major_formatter(ticks_x)
+            for j, df in enumerate(self.dfs):
+                if limit_episodes is None:
+                    axes[i].plot(list(df[key]), label=self.legends[j] + " " + key)
+                else:
+                    axes[i].plot(list(df[key])[:limit_episodes], label=self.legends[j] + " " + key)
+        plt.legend()
+        plt.savefig('./graph/plot.png')
+
+
+if __name__ == "__main__":
+    plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-10_21_42_30/log.csv',
+                       './results/offline-PPO/Hopper-v2_Default/2018-04-08_15_36_56/log.csv'], ['steps', 'rewards'],
+                      ['Q-PROP', 'PPO'])
+    plotter.plot(limit_episodes=15)
