@@ -141,28 +141,32 @@ class Plotter:
         self.legends = legends
 
     def plot(self, limit_episodes=None, saveto='./graph/plot.png'):
-        f, axes = plt.subplots(1, len(self.keys))
+        f, axes = plt.subplots(1, len(self.keys), figsize=(16,9))
         for i, key in enumerate(self.keys):
             axes[i].set_xlabel('episodes')
-            axes[i].set_ylabel(self.keys[i])
+            axes[i].set_ylabel(key)
             scale_x = 20
             ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * scale_x))
             axes[i].xaxis.set_major_formatter(ticks_x)
+            plots = []
+            labels = []
             for j, df in enumerate(self.dfs):
                 if limit_episodes is None:
-                    axes[i].plot(list(df[key]), label=self.legends[j] + " " + key)
+                    p, = axes[i].plot(list(df[key]))
                 else:
-                    axes[i].plot(list(df[key])[:limit_episodes], label=self.legends[j] + " " + key)
-        plt.legend()
+                    p, = axes[i].plot(list(df[key])[:limit_episodes])
+                plots.append(p)
+                labels.append(self.legends[j] + " " + key)
+            axes[i].legend(plots, labels)
         plt.savefig(saveto)
 
 
 if __name__ == "__main__":
-    # Hopper-v2 comparison between Q-PROP and PPO
-    # plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-10_21_42_30/log.csv',
-    #                    './results/offline-PPO/Hopper-v2_Default/2018-04-08_15_36_56/log.csv'], ['steps', 'rewards'],
-    #                   ['Q-PROP', 'PPO'])
-    # plotter.plot(limit_episodes=15)
+    #Hopper-v2 comparison between Q-PROP and PPO
+    plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-10_21_42_30/log.csv',
+                       './results/offline-PPO/Hopper-v2_Default/2018-04-08_15_36_56/log.csv'], ['steps', 'rewards'],
+                      ['Q-PROP', 'PPO'])
+    plotter.plot(limit_episodes=15, saveto='./graph/hp_plot.png')
 
     # FetchReach-v0 comparison
     plotter = Plotter(['./results/QPROP/FetchReach-v0_Default/2018-04-11_17_05_54/log.csv',
