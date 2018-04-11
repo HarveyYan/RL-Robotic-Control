@@ -5,3 +5,4 @@ A preliminary comparison between Q-PROP and Proximal Policy Gradient.
 ![placeholder](graph/plot.png)
 
 Needs more rigorous test and polishing give out the full potential of the integrated on-policy ppo and off-policy ddpg training.
+( Disclaimer..This figure might be deceptive, because Q-PROP as of now is not stable yet... :( )
