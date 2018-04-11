@@ -80,24 +80,24 @@ class Buffer:
         Next observation at the end of each trajectory is taken as zeros proportional to the observation dimension,
         which is biased because not every observation at the last time step is a terminal state.
         Maybe we should scrape the last quadruples at the end of each trajectory.
-        :param trajectories:
+        :param trajectories: Pay attention we only use scaled rewards
         :return:
         """
         if self.obs is None:
             self.obs = np.concatenate(
                 [t['observes'] for t in trajectories])  # last tuple doesn't correspond to next observation.
             self.act = np.concatenate([t['actions'] for t in trajectories])
-            self.rewards = np.concatenate([t['rewards'] for t in trajectories])
+            self.rewards = np.concatenate([t['scaled_rewards'] for t in trajectories])
             self.obs_next = np.concatenate(
                 [np.append(t['observes'][1:], np.zeros((1, self.obs_dim)), axis=0) for t in trajectories])
         else:
             self.obs = np.append(np.concatenate([t['observes'] for t in trajectories]), self.obs,
                                  axis=0)  # append (E*T, obs_dim)
             self.act = np.append(np.concatenate([t['actions'] for t in trajectories]), self.act, axis=0)
-            self.rewards = np.append(np.concatenate([t['rewards'] for t in trajectories]), self.rewards, axis=0)
+            self.rewards = np.append(np.concatenate([t['scaled_rewards'] for t in trajectories]), self.rewards, axis=0)
             self.obs_next = np.append(np.concatenate(
                 [np.append(t['observes'][1:], np.zeros((1, self.obs_dim)), axis=0) for t in trajectories]),
-                                      self.obs_next, axis=0)
+                self.obs_next, axis=0)
 
         if self.obs.shape[0] > self.buffer_size:
             cutoff = int(self.buffer_size * np.random.random())
@@ -140,7 +140,7 @@ class Plotter:
         assert (len(csv_logs) == len(legends))
         self.legends = legends
 
-    def plot(self, limit_episodes=None):
+    def plot(self, limit_episodes=None, saveto='./graph/plot.png'):
         f, axes = plt.subplots(1, len(self.keys))
         for i, key in enumerate(self.keys):
             axes[i].set_xlabel('episodes')
@@ -154,11 +154,18 @@ class Plotter:
                 else:
                     axes[i].plot(list(df[key])[:limit_episodes], label=self.legends[j] + " " + key)
         plt.legend()
-        plt.savefig('./graph/plot.png')
+        plt.savefig(saveto)
 
 
 if __name__ == "__main__":
-    plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-10_21_42_30/log.csv',
-                       './results/offline-PPO/Hopper-v2_Default/2018-04-08_15_36_56/log.csv'], ['steps', 'rewards'],
+    # Hopper-v2 comparison between Q-PROP and PPO
+    # plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-10_21_42_30/log.csv',
+    #                    './results/offline-PPO/Hopper-v2_Default/2018-04-08_15_36_56/log.csv'], ['steps', 'rewards'],
+    #                   ['Q-PROP', 'PPO'])
+    # plotter.plot(limit_episodes=15)
+
+    # FetchReach-v0 comparison
+    plotter = Plotter(['./results/QPROP/FetchReach-v0_Default/2018-04-11_17_05_54/log.csv',
+                       './results/offline-PPO/FetchReach-v0_Default/2018-04-11_16_58_46/log.csv'], ['entropy', 'rewards'],
                       ['Q-PROP', 'PPO'])
-    plotter.plot(limit_episodes=15)
+    plotter.plot(saveto='./graph/fr_plot.png')

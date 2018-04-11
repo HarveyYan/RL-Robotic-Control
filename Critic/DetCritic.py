@@ -35,21 +35,24 @@ class DeterministicCritic:
 
             """actions are included until later layers."""
 
-            hid1_size = (self.obs_dim+self.act_dim) * 10  # 10 chosen empirically on 'Hopper-v1'
-            hid3_size = 5  # 5 chosen empirically on 'Hopper-v1'
-            hid2_size = int(np.sqrt(hid1_size * hid3_size))
-            # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
-            lr = 1e-2 / np.sqrt(hid2_size)  # 1e-3 empirically determined
+            # 400 and 300 as mentioned in DDPG paper
+            hid1_size = 40 #400
+            hid2_size = 40 #300
+            lr = 1e-3
             # 3 hidden layers with relu activations
             out = tf.layers.dense(obs_ph, hid1_size, tf.nn.relu,
-                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h1")
-            out = tf.layers.dense(out, hid2_size, tf.nn.relu,
-                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h2")
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                                  kernel_regularizer=tf.contrib.layers.l2_regularizer(0.01),
+                                  name="h1")
             out = tf.concat([out, act_ph], 1, name="add_act")
-            out = tf.layers.dense(out, hid3_size, tf.nn.relu,
-                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h3")
+            out = tf.layers.dense(out, hid2_size, tf.nn.relu,
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                                  kernel_regularizer=tf.contrib.layers.l2_regularizer(0.01),
+                                  name="h2")
             out = tf.layers.dense(out, 1,
-                                  kernel_initializer=tf.contrib.layers.xavier_initializer(), name='output')
+                                  kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                                  kernel_regularizer=tf.contrib.layers.l2_regularizer(0.01),
+                                  name='output')
             value = tf.squeeze(out, name="value")  # remove dimensions of size 1 from the shape
 
             # gradient ascent
@@ -82,40 +85,16 @@ class DeterministicCritic:
             self.target_saver.restore(self.target_sess, self.saveto + 'critic/critic.pl')
             self.init_target = False
 
-        # TEST:
-        # with self.target_sess.as_default():
-        #     graph = self.target_sess.graph
-        #     predict = graph.get_tensor_by_name("value:0").eval(feed_dict={
-        #         graph.get_tensor_by_name("obs_ph:0"):np.random.rand(1,self.obs_dim),
-        #         graph.get_tensor_by_name("act_ph:0"): np.random.rand(1,self.act_dim)
-        #     })
-        #     print(predict)
-        #     exit()
-
         """processing training data"""
-        """Needs testing!!!"""
         # [0]: obs, [1]: act, [2]: rewards, [3]: next_obs
         samples = buffer.sample(num_samples)
         with self.target_sess.as_default():
             graph = self.target_sess.graph
             X = np.array([np.concatenate([obs, act]) for obs, act in zip(*(samples[:2]))])
             y = samples[2] + self.discount * graph.get_tensor_by_name("value:0").eval(feed_dict={
-                graph.get_tensor_by_name("obs_ph:0"): samples[3], # TODO, should be s_{t+1}! Obs_next from buffer
+                graph.get_tensor_by_name("obs_ph:0"): samples[3],
                 graph.get_tensor_by_name("act_ph:0"): policy.mean(samples[3])
             })
-
-        # This one works but is slow..
-        # X=[]
-        # y=[]
-        # for obs, act, reward in zip(*buffer.sample(num_samples)): # the tuple
-        #     X.append([obs, act])
-        #     with self.target_sess.as_default():
-        #         graph = self.target_sess.graph
-        #         target_predict = graph.get_tensor_by_name("value:0").eval(feed_dict={
-        #             graph.get_tensor_by_name("obs_ph:0"): obs,
-        #             graph.get_tensor_by_name("act_ph:0"): policy.mean(obs)
-        #         })
-        #         y.append(reward+self.discount*target_predict)
 
         """training...the critic network"""
         losses = []
@@ -144,6 +123,54 @@ class DeterministicCritic:
         with self.target_sess.graph.as_default():
             target_tvs = tf.trainable_variables()
             self.target_sess.run([tar_t.assign(self.tao * critic_tvs[i].eval(session=self.critic_sess) + (1-self.tao) * tar_t.eval(session=self.target_sess)) for i, tar_t in enumerate(target_tvs)])
+
+        return loss_mean, loss_std
+
+    def another_fit_func(self, policy, buffer, gradient_steps, mini_batch_size=256):
+
+        if self.init_target: # initialize target network
+            if not os.path.exists(self.saveto + 'critic'):
+                os.makedirs(self.saveto + 'critic')
+            self.critic_saver.save(self.critic_sess, self.saveto + 'critic/critic.pl')
+            self.target_saver.restore(self.target_sess, self.saveto + 'critic/critic.pl')
+            self.init_target = False
+
+        losses = []
+        for i in range(gradient_steps):
+
+            """process a minibatch of training data"""
+            # [0]: obs, [1]: act, [2]: rewards, [3]: next_obs
+            samples = buffer.sample(mini_batch_size)
+            with self.target_sess.as_default():
+                graph = self.target_sess.graph
+                X = np.array([np.concatenate([obs, act]) for obs, act in zip(*(samples[:2]))])
+                y = samples[2] + self.discount * graph.get_tensor_by_name("value:0").eval(feed_dict={
+                    graph.get_tensor_by_name("obs_ph:0"): samples[3],
+                    graph.get_tensor_by_name("act_ph:0"): policy.mean(samples[3])
+                })
+
+            """training...the critic network"""
+            with self.critic_sess.as_default():
+                graph = self.critic_sess.graph
+                x_train, y_train = shuffle(X, y)
+                # for _ in range(5):
+                feed_dict = {graph.get_tensor_by_name("obs_ph:0"): x_train[:, 0:self.obs_dim],
+                             graph.get_tensor_by_name("act_ph:0"): x_train[:, self.obs_dim:],
+                             graph.get_tensor_by_name("val_tar_ph:0"): y_train}
+                graph.get_operation_by_name("train").run(feed_dict=feed_dict)
+                losses.append(graph.get_tensor_by_name("loss:0").eval(feed_dict=feed_dict))
+
+        losses = np.array(losses)
+        loss_mean, loss_std = losses.mean(), losses.std()
+
+
+        """update target network"""
+        with self.critic_sess.graph.as_default():
+            critic_tvs = tf.trainable_variables()
+        with self.target_sess.graph.as_default():
+            target_tvs = tf.trainable_variables()
+            self.target_sess.run([tar_t.assign(self.tao * critic_tvs[i].eval(session=self.critic_sess) +
+                                               (1-self.tao) * tar_t.eval(session=self.target_sess)) for i, tar_t in enumerate(target_tvs)])
 
         return loss_mean, loss_std
 

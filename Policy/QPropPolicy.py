@@ -19,7 +19,6 @@ class QPropPolicy:
         self.epochs = epochs
         self.eta = 50 # hinge loss multiplier, between actual kl and kl target
         self.beta = 1.0 # kl penalty term multiplier
-        self.lr = 1e-4
         self.lr_multiplier = 1.0  # dynamically adjust lr when D_KL out of control
         self._build_graph()
         self._init_session()
@@ -59,7 +58,7 @@ class QPropPolicy:
         hid3_size = self.act_dim * 10  # 10 empirically determined
         hid2_size = int(np.sqrt(hid1_size * hid3_size))
         # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
-        self.lr = 9e-2 / np.sqrt(hid2_size)  # 9e-4 empirically determined
+        self.lr = 9e-4 / np.sqrt(hid2_size)  # 9e-4 empirically determined
         # 3 hidden layers with tanh activations
         out = tf.layers.dense(self.obs_ph, hid1_size, tf.nn.relu,
                               kernel_initializer=tf.contrib.layers.xavier_initializer(), name="h1")
@@ -130,8 +129,8 @@ class QPropPolicy:
         loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
         """DDPG loss definition"""
         # ctrl_taylor_ph is of shape (#samples, act_dim), means is of shape (#samples, act_dim)
-        loss -= tf.reduce_mean(tf.reduce_sum(tf.multiply(self.ctrl_taylor_ph, self.means), axis=1))
-        # loss -= tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
+        # loss -= tf.reduce_mean(tf.reduce_sum(tf.multiply(self.ctrl_taylor_ph, self.means), axis=1))
+        loss -= tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
         self.loss = loss
 
     def _train(self):
@@ -193,6 +192,45 @@ class QPropPolicy:
                 self.lr_multiplier *= 1.5
         # print(self.beta)
         return loss, kl, entropy, self.beta
+
+
+    # def legacy_update(self, observes, actions, advantages):
+    #     """
+    #     Update policy based on observations, actions and advantages
+    #     """
+    #     feed_dict = {self.obs_ph: observes,
+    #                  self.act_ph: actions,
+    #                  self.learning_signal_ph: advantages,
+    #                  self.beta_ph: self.beta,
+    #                  self.eta_ph: self.eta,
+    #                  self.lr_ph: self.lr * self.lr_multiplier}
+    #
+    #     # TODO, check validity of means_old and log_vars
+    #     means_old, logvars_old = self.sess.run([self.means, self.log_vars], feed_dict)
+    #     feed_dict[self.logvars_old_ph] = logvars_old
+    #     feed_dict[self.means_old_ph] = means_old
+    #
+    #     loss, kl, entropy = 0, 0, 0
+    #     for e in range(self.epochs):
+    #         # TODO: need to improve data pipeline - re-feeding data every epoch
+    #         self.sess.run(self.train, feed_dict)
+    #         loss, kl, entropy = self.sess.run([self.loss, self.kl, self.entropy], feed_dict)
+    #         if kl > self.kl_target * 4:  # early stopping if D_KL diverges badly
+    #             break
+    #     # self.sess.run(self.train, feed_dict)
+    #     # loss, kl, entropy = self.sess.run([self.loss, self.kl, self.entropy], feed_dict)
+    #
+    #     # TODO: too many "magic numbers" in next 8 lines of code, need to clean up
+    #     if kl > self.kl_target * 2:  # servo beta to reach D_KL target
+    #         self.beta = np.minimum(35, 1.5 * self.beta)  # max clip beta
+    #         if self.beta > 30 and self.lr_multiplier > 0.1:
+    #             self.lr_multiplier /= 1.5
+    #     elif kl < self.kl_target / 2:
+    #         self.beta = np.maximum(1 / 35, self.beta / 1.5)  # min clip beta
+    #         if self.beta < (1 / 30) and self.lr_multiplier < 10:
+    #             self.lr_multiplier *= 1.5
+    #     # print(self.beta)
+    #     return loss, kl, entropy, self.beta
 
     def save(self, saveto):
         if not os.path.exists(saveto + 'policy'):

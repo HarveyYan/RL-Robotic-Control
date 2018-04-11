@@ -175,7 +175,8 @@ class Experiment:
             observes, actions, rewards = self.run_one_episode()
             trajectory = {'observes': observes,
                           'actions': actions,
-                          'rewards': rewards}
+                          'rewards': rewards,
+                          'scaled_rewards': rewards*(1-self.discount)}
             trajectories.append(trajectory)
 
         return trajectories
@@ -197,13 +198,19 @@ class Experiment:
             # In future needs to account for not uniform time steps per episode.
             # e.g. in Hopper-v2 environment not every episode has same time steps
             # E = len(trajectories)
-            num_samples = np.sum([len(t['rewards']) for t in trajectories])
+            # num_samples = np.sum([len(t['rewards']) for t in trajectories])
+            gradient_steps = np.sum([len(t['rewards']) for t in trajectories])
+            if self.env_name == "FetchReach-v0":
+                assert (gradient_steps == 20*50)
 
             """train critic"""
-            self.critic.fit(self.policy, self.buffer, epochs=10, num_samples=num_samples) # take E*T samples, so in total E*T gradient steps
+            # train all samples in the buffer, to the extreme
+            # self.critic.fit(self.policy, self.buffer, epochs=20, num_samples=self.buffer.size())
+            # train some samples minibatches only
+            self.critic.another_fit_func(self.policy, self.buffer, 5000)
 
             """calculation of episodic discounted return only needs rewards"""
-            mc_returns = np.concatenate([self.discounted_sum(t['rewards'], self.discount) for t in trajectories])
+            mc_returns = np.concatenate([self.discounted_sum(t['scaled_rewards'], self.discount) for t in trajectories])
 
             """using current batch of samples to update baseline"""
             observes = np.concatenate([t['observes'] for t in trajectories])
@@ -214,12 +221,15 @@ class Experiment:
             for t in trajectories:
                 t['values'] = self.value_func.predict(t['observes'])
                 # IS it really legitimate to insert 0 at the last obs?
-                t['td_residual'] = t['rewards'] + self.discount * np.append(t['values'][1:], 0) - t['values']
+                t['td_residual'] = t['scaled_rewards'] + self.discount * np.append(t['values'][1:], 0) - t['values']
                 t['gae'] = self.discounted_sum(t['td_residual'], self.discount * self.lamb)
             advantages = np.concatenate([t['gae'] for t in trajectories])
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-6)
 
             """compute control variate"""""
             cv = self.critic.get_contorl_variate(self.policy, observes, actions)
+            # cv must not be centered
+            # cv = (cv - cv.mean()) / (cv.std() + 1e-6)
 
             """conservative control variate"""
             eta = [1 if i > 0 else 0 for i in advantages*cv]
@@ -228,6 +238,7 @@ class Experiment:
             # check that advantages and CV should be of size E*T
             # eta controls the on-off of control variate
             learning_signal = advantages - eta*cv
+            # learning_signal = (learning_signal - learning_signal.mean()) / (learning_signal.std() + 1e-6)
 
             """controlled taylor eval term"""
             ctrl_taylor = np.concatenate([ [eta[i]*act] for i, act in enumerate(self.critic.get_taylor_eval(self.policy, observes))])
@@ -354,6 +365,7 @@ if __name__ == "__main__":
         OUTPATH = './results/QPROP/' + args.env_name + '_' + args.message + '/'  + date_id
         if not os.path.exists(OUTPATH):
             os.makedirs(OUTPATH)
+        print("saved to", OUTPATH)
         del args.message
         del args.show_dir
         expr = Experiment(**vars(args))
@@ -366,6 +378,7 @@ if __name__ == "__main__":
             print('Needs to specify --show_dir when --show is active')
             exit()
         show_dir = args.show_dir # e.g. "./results/Hopper-v2/offline-PPO/2018-04-06_12_58_36/"
+        print('from', show_dir)
         del show_dir
         expr = Experiment(**vars(args))
         expr.demonstrate_agent(show_dir)

@@ -164,7 +164,9 @@ class Experiment:
             trajectory = {'observes': observes,
                           'actions': actions,
                           'rewards': rewards}
+
             # scale rewards
+            # This step is really indispensable for the convergence of FetchReach environment
             if self.discount < 0.999:
                 rewards = rewards*(1-self.discount)
 
