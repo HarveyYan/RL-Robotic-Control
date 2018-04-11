@@ -63,32 +63,49 @@ class Scaler(object):
 class Buffer:
 
     def __init__(self, buffer_size, obs_dim, act_dim):
-        self.batch_size = buffer_size
+        self.buffer_size = buffer_size
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.obs = None
         self.act = None
         self.rewards = None
+        self.obs_next = None
 
     def append(self, trajectories):
+        """
+        Next observation at the end of each trajectory is taken as zeros proportional to the observation dimension,
+        which is biased because not every observation at the last time step is a terminal state.
+        Maybe we should scrape the last quadruples at the end of each trajectory.
+        :param trajectories:
+        :return:
+        """
         if self.obs is None:
-            self.obs = np.concatenate([t['observes'] for t in trajectories])
+            self.obs = np.concatenate([t['observes'] for t in trajectories])   # last tuple doesn't correspond to next observation.
             self.act = np.concatenate([t['actions'] for t in trajectories])
             self.rewards = np.concatenate([t['rewards'] for t in trajectories])
+            self.obs_next = np.concatenate([np.append(t['observes'][1:], np.zeros((1, self.obs_dim)), axis=0) for t in trajectories])
         else:
-            np.append(np.concatenate([t['observes'] for t in trajectories]),self.obs) # append (E*T, obs_dim)
-            np.append(np.concatenate([t['actions'] for t in trajectories]), self.act)
-            np.append(np.concatenate([t['rewards'] for t in trajectories]), self.rewards)
+            np.append(np.concatenate([t['observes'] for t in trajectories]),self.obs, axis=0) # append (E*T, obs_dim)
+            np.append(np.concatenate([t['actions'] for t in trajectories]), self.act, axis=0)
+            np.append(np.concatenate([t['rewards'] for t in trajectories]), self.rewards, axis=0)
+            np.append(np.concatenate([np.append(t['observes'][1:], np.zeros((1, self.obs_dim)), axis=0) for t in trajectories]), self.obs_next, axis=0)
 
-        if self.obs.shape[0] > self.batch_size:
-            cutoff = int(self.batch_size*np.random.random())
+        if self.obs.shape[0] > self.buffer_size:
+            cutoff = int(self.buffer_size*np.random.random())
             self.obs = self.obs[:cutoff]
             self.act = self.act[:cutoff]
             self.rewards = self.rewards[:cutoff]
+            self.obs_next = self.obs_next[:cutoff]
 
     def sample(self, num_samples):
+        """
+        For Q critic training. Normally would take E*T number of samples
+        :param num_samples: actual number of samples is the minimum of num_samples and total_samples that reside in this buffer.
+        :return: permuted, loose-tied, quadruples.
+        """
         total_samples = self.obs.shape[0]
+        num_samples  = min(num_samples, total_samples)
         permute = np.random.permutation(np.linspace(0, total_samples - 1, total_samples, dtype=int))
         permute = permute[:num_samples]
-        return self.obs[permute], self.act[permute], self.rewards[permute]
+        return self.obs[permute], self.act[permute], self.rewards[permute], self.obs_next[permute]
 

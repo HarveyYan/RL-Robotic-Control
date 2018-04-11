@@ -22,7 +22,7 @@ from matplotlib import ticker
 
 from utils import Scaler, Buffer
 
-from Policy.NoTracePolicy import NoTracePolicy
+from Policy.QPropPolicy import QPropPolicy
 from ValueFunc.l2ValueFunc import l2TargetValueFunc
 from Critic.DetCritic import DeterministicCritic
 
@@ -60,7 +60,7 @@ class Experiment:
         self.episodes = 20
         self.killer = GracefulKiller()
 
-        self.policy = NoTracePolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, epochs=20)
+        self.policy = QPropPolicy(self.obs_dim, self.act_dim, self.env.action_space, kl_target, epochs=20)
         self.critic = DeterministicCritic(self.obs_dim, self.act_dim, self.discount, OUTPATH)
         # using MC return would be more helpful
         self.value_func = l2TargetValueFunc(self.obs_dim, epochs=10)
@@ -191,8 +191,14 @@ class Experiment:
             self.buffer.append(trajectories)
             i += len(trajectories)
 
+            # for E=20, T=50, the total number of samples would be 1000
+            # In future needs to account for not uniform time steps per episode.
+            # e.g. in Hopper-v2 environment not every episode has same time steps
+            E = len(trajectories)
+            T = trajectories[0]['observes'].shape[0]
+
             """train critic"""
-            self.critic.fit(self.policy, self.buffer, epochs=20, num_samples=50000)
+            self.critic.fit(self.policy, self.buffer, epochs=10, num_samples=E*T) # take E*T samples, so in total E*T gradient steps
 
             """calculation of episodic discounted return only needs rewards"""
             mc_returns = np.concatenate([self.discounted_sum(t['rewards'], self.discount) for t in trajectories])
@@ -205,6 +211,7 @@ class Experiment:
             """compute GAE"""
             for t in trajectories:
                 t['values'] = self.value_func.predict(t['observes'])
+                # IS it really legitimate to insert 0 at the last obs?
                 t['td_residual'] = t['rewards'] + self.discount * np.append(t['values'][1:], 0) - t['values']
                 t['gae'] = self.discounted_sum(t['td_residual'], self.discount * self.lamb)
             advantages = np.concatenate([t['gae'] for t in trajectories])
@@ -212,14 +219,21 @@ class Experiment:
             """compute control variate"""""
             cv = self.critic.get_contorl_variate(self.policy, observes, actions)
 
+            """conservative control variate"""
+            eta = [1 if i>0 else 0 for i in advantages*cv]
 
+            """center learning signal"""
+            # check that advantages and CV should be of size E*T
+            # eta controls the on-off of control variate
+            learning_signal = advantages - eta*cv
 
+            """controlled taylor eval term"""
+            ctrl_taylor = np.concatenate([ [eta[i]*act] for i, act in enumerate(self.critic.get_taylor_eval(self.policy, observes))])
+
+            policy_loss, kl, entropy, beta = self.policy.update(observes, actions, learning_signal, ctrl_taylor)
 
             # normalize advantage estimates
             # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-6)
-
-
-            policy_loss, kl, entropy, beta = self.policy.update(observes, actions, advantages)
 
             avg_rewards = np.sum(np.concatenate([t['rewards'] for t in trajectories])) / self.episodes
             avg_timesteps = np.average([len(t['rewards']) for t in trajectories])
@@ -335,7 +349,7 @@ if __name__ == "__main__":
     if not args.show:
         print('training an agent anew, in environment: {}'.format(args.env_name))
         global OUTPATH
-        OUTPATH = './results/offline-PPO/' + args.env_name + '_' + args.message + '/'  + date_id
+        OUTPATH = './results/QPROP/' + args.env_name + '_' + args.message + '/'  + date_id
         if not os.path.exists(OUTPATH):
             os.makedirs(OUTPATH)
         del args.message
