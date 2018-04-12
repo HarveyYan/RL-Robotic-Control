@@ -56,7 +56,7 @@ class Experiment:
         self.lamb = lamb
         self.animate = animate
 
-        self.buffer = Buffer(50000, self.obs_dim, self.act_dim)
+        self.buffer = Buffer(1000000, self.obs_dim, self.act_dim)
         self.episodes = 20
         self.killer = GracefulKiller()
 
@@ -70,6 +70,7 @@ class Experiment:
             # save copies of file
             shutil.copy(inspect.getfile(self.policy.__class__), OUTPATH)
             shutil.copy(inspect.getfile(self.value_func.__class__), OUTPATH)
+            shutil.copy(inspect.getfile(self.critic.__class__), OUTPATH)
             shutil.copy(inspect.getfile(self.__class__), OUTPATH)
 
             self.log_file = open(OUTPATH + 'log.csv', 'w')

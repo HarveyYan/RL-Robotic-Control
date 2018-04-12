@@ -100,11 +100,11 @@ class Buffer:
                 self.obs_next, axis=0)
 
         if self.obs.shape[0] > self.buffer_size:
-            cutoff = int(self.buffer_size * np.random.random())
-            self.obs = self.obs[:cutoff]
-            self.act = self.act[:cutoff]
-            self.rewards = self.rewards[:cutoff]
-            self.obs_next = self.obs_next[:cutoff]
+            # cutoff = int(self.buffer_size * np.random.random())
+            self.obs = self.obs[:self.buffer_size]
+            self.act = self.act[:self.buffer_size]
+            self.rewards = self.rewards[:self.buffer_size]
+            self.obs_next = self.obs_next[:self.buffer_size]
 
     def sample(self, num_samples):
         """
