@@ -36,9 +36,9 @@ class DeterministicCritic:
             """actions are included until later layers."""
 
             # 400 and 300 as mentioned in DDPG paper
-            hid1_size = 40 #400
-            hid2_size = 40 #300
-            lr = 1e-3
+            hid1_size = self.obs_dim * 10
+            hid2_size = (self.obs_dim + self.act_dim) * 5
+            lr = 1e-4
             # 3 hidden layers with relu activations
             out = tf.layers.dense(obs_ph, hid1_size, tf.nn.relu,
                                   kernel_initializer=tf.contrib.layers.xavier_initializer(),

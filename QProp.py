@@ -207,7 +207,7 @@ class Experiment:
             # train all samples in the buffer, to the extreme
             # self.critic.fit(self.policy, self.buffer, epochs=20, num_samples=self.buffer.size())
             # train some samples minibatches only
-            self.critic.another_fit_func(self.policy, self.buffer, 5000)
+            critic_loss_mean, critic_loss_std = self.critic.another_fit_func(self.policy, self.buffer, gradient_steps)
 
             """calculation of episodic discounted return only needs rewards"""
             mc_returns = np.concatenate([self.discounted_sum(t['scaled_rewards'], self.discount) for t in trajectories])
@@ -255,6 +255,7 @@ class Experiment:
             # compute statistics such as mean and std
             log['steps'] = avg_timesteps
             log['rewards'] = avg_rewards
+            log['critic_loss'] = critic_loss_mean
             log['policy_loss'] = policy_loss
             log['kl'] = kl
             log['entropy'] = entropy
@@ -264,7 +265,7 @@ class Experiment:
             # display
             print('episode: ', i)
             print('average steps: {0}, average rewards: {1}'.format(log['steps'], log['rewards']))
-            for key in ['policy_loss', 'kl', 'entropy', 'beta', 'value_func_loss']:
+            for key in ['critic_loss', 'policy_loss', 'kl', 'entropy', 'beta', 'value_func_loss']:
                 print('{:s}: {:.2g}'.format(key, log[key]))
             print('\n')
             ep_steps.append(log['steps'])
