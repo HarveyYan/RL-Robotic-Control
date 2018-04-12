@@ -128,7 +128,7 @@ class DeterministicCritic:
 
         return loss_mean, loss_std
 
-    def another_fit_func(self, policy, buffer, gradient_steps, mini_batch_size=256):
+    def another_fit_func(self, policy, buffer, gradient_steps, mini_batch_size=64):
 
         if self.init_target: # initialize target network
             if not os.path.exists(self.saveto + 'critic'):
