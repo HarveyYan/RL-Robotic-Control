@@ -3,6 +3,9 @@ import numpy as np
 import os
 from sklearn.utils import shuffle
 
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.1)
+
 class DeterministicCritic:
     """
     A Q state-value function, trained with off-policy samples from a replay buffer.
@@ -16,12 +19,11 @@ class DeterministicCritic:
         self.discount = discount
 
         graph, init, self.critic_saver= self._build_graph()
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
         self.critic_sess = tf.Session(graph=graph, config=tf.ConfigProto(gpu_options=gpu_options))
         self.critic_sess.run(init)
 
         target_graph, _, self.target_saver = self._build_graph()
-        self.target_sess = tf.Session(graph=target_graph)
+        self.target_sess = tf.Session(graph=target_graph, config=tf.ConfigProto(gpu_options=gpu_options))
 
         self.init_target = True # target network needs to be initialized to Q critic the first time
         self.tao = 1e-3 # mixture parameter, as in the paper DDPG Sec. 7 Experiments details

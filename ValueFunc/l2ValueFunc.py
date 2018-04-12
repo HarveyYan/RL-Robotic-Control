@@ -5,7 +5,8 @@ import numpy as np
 from sklearn.utils import shuffle
 import os
 
-gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.1)
 
 class l2TargetValueFunc:
     def __init__(self, obs_dim, epochs=10):
