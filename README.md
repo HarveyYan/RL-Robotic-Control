@@ -1,6 +1,6 @@
 # RL-Robotic-Control
 
-A ~~preliminary~~ fair comparison between Q-PROP and Proximal Policy Gradient in the Hopper-v2 environment.
+A ~~preliminary~~ fair comparison between Q-PROP and Proximal Policy Gradient in the Hopper-v2 environment. (Minibatch size 64)
 
 ![placeholder](graph/hp_plot_new.png)
  

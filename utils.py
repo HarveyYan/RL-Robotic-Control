@@ -163,7 +163,7 @@ class Plotter:
 
 if __name__ == "__main__":
     # #Hopper-v2 comparison between Q-PROP and PPO
-    plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-12_17_45_26/log.csv',
+    plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-12_19_00_20/log.csv',
                        './results/offline-PPO/Hopper-v2_Default/2018-04-12_16_39_58/log.csv'], ['steps', 'rewards'],
                       ['Q-PROP', 'PPO'])
     plotter.plot(saveto='./graph/hp_plot_new.png')
