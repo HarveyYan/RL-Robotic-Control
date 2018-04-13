@@ -163,10 +163,10 @@ class Plotter:
 
 if __name__ == "__main__":
     # #Hopper-v2 comparison between Q-PROP and PPO
-    plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-12_19_00_20/log.csv',
-                       './results/offline-PPO/Hopper-v2_Default/2018-04-12_16_39_58/log.csv'], ['steps', 'rewards'],
-                      ['Q-PROP', 'PPO'])
-    plotter.plot(saveto='./graph/hp_plot_new.png')
+    # plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-12_19_00_20/log.csv',
+    #                    './results/offline-PPO/Hopper-v2_Default/2018-04-12_16_39_58/log.csv'], ['steps', 'rewards'],
+    #                   ['Q-PROP', 'PPO'])
+    # plotter.plot(saveto='./graph/hp_plot_new.png')
 
     # #Hopper-v2 comparison between Q-PROP and PPO
     # plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-10_21_42_30/log.csv',
@@ -175,7 +175,8 @@ if __name__ == "__main__":
     # plotter.plot(limit_episodes=15, saveto='./graph/hp_plot.png')
     #
     # # FetchReach-v0 comparison
-    # plotter = Plotter(['./results/QPROP/FetchReach-v0_Default/2018-04-11_17_05_54/log.csv',
-    #                    './results/offline-PPO/FetchReach-v0_Default/2018-04-11_16_58_46/log.csv'], ['entropy', 'rewards'],
-    #                   ['Q-PROP', 'PPO'])
-    # plotter.plot(saveto='./graph/fr_plot.png')
+    plotter = Plotter(['./results/QPROP/FetchReach-v0_Default/2018-04-11_17_05_54/log.csv',
+                       './results/QPROP/FetchReach-v0_expr_target_policy_lr_1e-3/2018-04-13_19_10_13/log.csv',
+                       './results/offline-PPO/FetchReach-v0_Default/2018-04-11_16_58_46/log.csv'], ['entropy', 'rewards'],
+                      ['Q-PROP', 'Q-PROP with target policy','PPO'])
+    plotter.plot(saveto='./graph/fr_plot_new.png')

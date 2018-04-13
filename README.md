@@ -1,16 +1,23 @@
 # RL-Robotic-Control
 
+
+## Hopper-v2 environment
+
 A ~~preliminary~~ fair comparison between Q-PROP and Proximal Policy Gradient in the Hopper-v2 environment. (Minibatch size 64)
 
 ![placeholder](graph/hp_plot_new.png)
  
 Needs more rigorous test and polishing give out the full potential of the integrated on-policy ppo and off-policy ddpg training.
 
-Another comparison of the two algorithms in FetchReach-v0 environment.
-![placeholder](graph/fr_plot.png)
-This demonstrates that Q-PROP does have tangible improvements to the original PPO method, particularly when PPO is a part of Q-PROP.
 
-( Disclaimer..This figures are inconclusive, because Q-PROP as of now is not stable yet... :( )
+## FetchReach-v0 environment
+
+Another comparison of the two algorithms in FetchReach-v0 environment.
+
+Note that the Q-PROP with target policy implements almost exactly the DDPG training together with proximal policy optimization method; and its learning rate has been adjusted to 0.001.
+
+![placeholder](graph/fr_plot_new.png)
+This demonstrates that Q-PROP does have tangible improvements to the original PPO method, particularly when PPO is a part of Q-PROP.
 
 ### Some observation so far
 * Normalization of observation using a Scaler, as well as the GAE is crucial; should really consider adding batch normalization layers.
