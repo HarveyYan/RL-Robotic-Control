@@ -7,7 +7,9 @@ import tensorflow.contrib.layers
 import numpy as np
 import os
 
-gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2)
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.1)
+gpu_options.allow_growth = True
 
 class NoTracePolicy:
 

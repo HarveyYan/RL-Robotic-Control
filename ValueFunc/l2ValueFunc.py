@@ -7,6 +7,7 @@ import os
 
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.1)
+gpu_options.allow_growth = True
 
 class l2TargetValueFunc:
     def __init__(self, obs_dim, epochs=10):
@@ -15,7 +16,7 @@ class l2TargetValueFunc:
         self.replay_buffer_y = None
         self.epochs = epochs
         self._build_graph()
-        self.sess = tf.Session(graph=self.g)
+        self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
         self.sess.run(self.init)
 
     def _build_graph(self):
@@ -46,8 +47,6 @@ class l2TargetValueFunc:
             self.saver = tf.train.Saver()
             self.train = optimizer.minimize(self.loss)
             self.init = tf.global_variables_initializer()
-        self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
-        self.sess.run(self.init)
 
     def update(self, x, y):
         """
