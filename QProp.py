@@ -1,6 +1,12 @@
 """
-Proximal Policy Optimization without eligibility trace;
-batch update method.
+Implementation of
+'Q-PROP: SAMPLE-EFFICIENT POLICY GRADIENT WITH AN OFF-POLICY CRITIC'
+which combines on-policy standard policy gradient methods with off-policy DDPG method.
+
+This specific implementation used Proximal Policy Optimization method (a conservative variant),
+in lieu of standard policy gradient method, for the Actor part.
+
+DDPG is used for the Q Critic.
 
 Special thanks to Patrick Coady (pat-coady.github.io).
 His implementation on PPO really helped me a lot.

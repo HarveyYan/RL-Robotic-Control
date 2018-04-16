@@ -1,7 +1,8 @@
 """
-Logging and Data Scaling Utilities
-
-Written by Patrick Coady (pat-coady.github.io)
+We have here:
+ - A neat Scaler utility for observation normalization.
+ - A vaiable replay buffer.
+ - A simple plotter,
 """
 import numpy as np
 import pickle
@@ -9,7 +10,6 @@ import matplotlib.pyplot as plt
 from matplotlib import ticker
 import os
 import pandas as pd
-
 
 class Scaler(object):
     """ Generate scale and offset based on running mean and stddev along axis=0
@@ -81,7 +81,7 @@ class Buffer:
         which is biased because not every observation at the last time step is a terminal state.
         Maybe we should scrape the last quadruples at the end of each trajectory.
         :param trajectories: Pay attention we only use scaled rewards
-        :return:
+        :return: an enriched experience buffer
         """
         if self.obs is None:
             self.obs = np.concatenate(
@@ -119,12 +119,21 @@ class Buffer:
         return self.obs[permute], self.act[permute], self.rewards[permute], self.obs_next[permute]
 
     def size(self):
+        """
+        Total amount of applicable experience
+        :return: size of buffer
+        """
         return self.rewards.shape[0]
 
 
 class Plotter:
 
     def __init__(self, csv_logs, keys, legends):
+        """
+        :param csv_logs: each csv in this list needs to contain the keys specified in the argument.
+        :param keys: properties which we would like to show in the plots. such as rewards or time steps per episode
+        :param legends: legend to be shown in the plots for each csv file, such as which algorithm it is for.
+        """
         self.dfs = []
         if type(csv_logs) is list:
             for log in csv_logs:
@@ -141,6 +150,11 @@ class Plotter:
         self.legends = legends
 
     def plot(self, limit_episodes=None, saveto='./graph/plot.png'):
+        """
+        :param limit_episodes: sometimes the csv files don't have uniform length of episodes.
+        :param saveto: save location
+        :return: save plot to 'saveto'
+        """
         f, axes = plt.subplots(1, len(self.keys), figsize=(16,9))
         for i, key in enumerate(self.keys):
             axes[i].set_xlabel('episodes')
@@ -154,7 +168,7 @@ class Plotter:
                 if limit_episodes is None:
                     p, = axes[i].plot(list(df[key]))
                 else:
-                    p, = axes[i].plot(list(df[key])[:int(limit_episodes/20)])
+                    p, = axes[i].plot(list(df[key])[:int(limit_episodes)])
                 plots.append(p)
                 labels.append(self.legends[j] + " " + key)
             axes[i].legend(plots, labels)
@@ -167,7 +181,7 @@ if __name__ == "__main__":
                        './results/QPROP/Hopper-v2_expr_target_policy/2018-04-14_23_30_57/log.csv',
                        './results/offline-PPO/Hopper-v2_Default/2018-04-12_18_19_01_10000episodes/log.csv'], ['steps', 'rewards'],
                       ['Q-PROP', 'Q-PROP with target policy', 'PPO'])
-    plotter.plot(limit_episodes=1400, saveto='./graph/hp_plot.png')
+    plotter.plot(limit_episodes=50, saveto='./graph/hp_plot.png')
 
     # FetchReach-v0 comparison between Q-PROP and PPO
     plotter = Plotter(['./results/QPROP/FetchReach-v0_Default/2018-04-11_17_05_54/log.csv',

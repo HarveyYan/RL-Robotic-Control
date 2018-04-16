@@ -1,16 +1,26 @@
+"""
+Adaptation from
+'CONTINUOUS CONTROL WITH DEEP REINFORCEMENT LEARNING'
+which is usually referred as DDPG.
+
+This Critic is updated in a DDPG manner, with a target Q network and a target determinstic policy,
+and off-policy samples from a replay buffer.
+"""
+
 import tensorflow as tf
 import numpy as np
 import os
 from sklearn.utils import shuffle
 
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+# a reasonable amount of gpu acceleration
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.1)
 gpu_options.allow_growth = True
 
 class DeterministicCritic:
     """
-    A Q state-value function, trained with off-policy samples from a replay buffer.
-
+    This DeterministicCritic represents a Q value function, trained with off-policy samples from a replay buffer.
+    It also includes a target Q value function, where the TD learning targets are bootstraped from, to alleviate bias.
     """
 
     def __init__(self, obs_dim, act_dim, discount, saveto):
@@ -18,16 +28,15 @@ class DeterministicCritic:
         self.act_dim = act_dim
         self.saveto = saveto
         self.discount = discount
-
-        graph, init, self.critic_saver= self._build_graph()
+        # critic network
+        graph, init, self.critic_saver = self._build_graph()
         self.critic_sess = tf.Session(graph=graph, config=tf.ConfigProto(gpu_options=gpu_options))
         self.critic_sess.run(init)
-
+        # target network
         target_graph, _, self.target_saver = self._build_graph()
         self.target_sess = tf.Session(graph=target_graph, config=tf.ConfigProto(gpu_options=gpu_options))
-
-        self.init_target = True # target network needs to be initialized to Q critic the first time
-        self.tao = 1e-3 # mixture parameter, as in the paper DDPG Sec. 7 Experiments details
+        self.init_target = True  # target network needs to be initialized to Q critic the first time
+        self.tao = 1e-3  # mixture parameter, as in the paper DDPG Sec. 7 Experiments details
 
     def _build_graph(self):
         g = tf.Graph()
@@ -36,9 +45,8 @@ class DeterministicCritic:
             act_ph = tf.placeholder(tf.float32, (None, self.act_dim), 'act_ph')
             val_tar_ph = tf.placeholder(tf.float32, (None,), 'val_tar_ph')
 
-            """actions are included until later layers."""
-
-            # 400 and 300 as mentioned in DDPG paper
+            # the DDPG paper has two hidden layers of size 400 and 300 units respectively
+            # for low-dimensional feature inputs (direct numerical features, not pictures; otherwise use CNN).
             hid1_size = self.obs_dim * 10
             hid2_size = (self.obs_dim + self.act_dim) * 5
             lr = 1e-3
@@ -71,17 +79,19 @@ class DeterministicCritic:
     #     val = self.sess.run(self.value, feed_dict=feed_dict)
     #     return np.squeeze(val)
 
-    def fit(self, policy, buffer, epochs, num_samples, batch_size=256):
+    def fit(self, policy, buffer, epochs, num_samples, batch_size=64):
         """
         DDPG training style, fitted with off-policy TD learning as in 'Lillicrap et al., 2016'.
+        Take as many samples indicated by the num_samples argument, and perform mini-batch gradient descent
+        on these samples with batch size and iterations indicated by batch_size argument and epochs argument respectively.
         :param policy: where we can expected action for each observation
         :param buffer: where samples come from
         :param epochs: once we get all the samples, we would use mini-batch training on the critic.
         :param num_samples: Normally would be in the size of Episodes*Time_steps
         :param batch_size: minibatch size
-        :return:
+        :return: mean and std of losses
         """
-        if self.init_target: # initialize target network
+        if self.init_target:  # initialize target network
             if not os.path.exists(self.saveto + 'critic'):
                 os.makedirs(self.saveto + 'critic')
             self.critic_saver.save(self.critic_sess, self.saveto + 'critic/critic.pl')
@@ -119,19 +129,28 @@ class DeterministicCritic:
             losses = np.array(losses)
             loss_mean, loss_std = losses.mean(), losses.std()
 
-
         """update target network"""
         with self.critic_sess.graph.as_default():
             critic_tvs = tf.trainable_variables()
         with self.target_sess.graph.as_default():
             target_tvs = tf.trainable_variables()
-            self.target_sess.run([tar_t.assign(self.tao * critic_tvs[i].eval(session=self.critic_sess) + (1-self.tao) * tar_t.eval(session=self.target_sess)) for i, tar_t in enumerate(target_tvs)])
+            self.target_sess.run([tar_t.assign(
+                self.tao * critic_tvs[i].eval(session=self.critic_sess) + (1 - self.tao) * tar_t.eval(
+                    session=self.target_sess)) for i, tar_t in enumerate(target_tvs)])
 
         return loss_mean, loss_std
 
     def another_fit_func(self, policy, buffer, gradient_steps, mini_batch_size=64):
-
-        if self.init_target: # initialize target network
+        """
+        Take as many batches of samples indicated by the gradient_steps argument, and perform one mini-batch update per batch.
+        This update scheme appears to be more robust than the previous one.
+        :param policy: a deterministic policy (e.g. mean of a parameterized gaussian)
+        :param buffer: a replay buffer containing the quadruple (s_t, a_t, r_{t+1}, s_{t+1})
+        :param gradient_steps: number of mini-batches
+        :param mini_batch_size: size per mini-batch
+        :return: the mean and standard deviation across all mini-batches
+        """
+        if self.init_target:  # initialize target network
             if not os.path.exists(self.saveto + 'critic'):
                 os.makedirs(self.saveto + 'critic')
             self.critic_saver.save(self.critic_sess, self.saveto + 'critic/critic.pl')
@@ -140,7 +159,6 @@ class DeterministicCritic:
 
         losses = []
         for i in range(gradient_steps):
-
             """process a minibatch of training data"""
             # [0]: obs, [1]: act, [2]: rewards, [3]: next_obs
             samples = buffer.sample(mini_batch_size)
@@ -166,55 +184,65 @@ class DeterministicCritic:
         losses = np.array(losses)
         loss_mean, loss_std = losses.mean(), losses.std()
 
-
         """update target network"""
         with self.critic_sess.graph.as_default():
             critic_tvs = tf.trainable_variables()
         with self.target_sess.graph.as_default():
             target_tvs = tf.trainable_variables()
             self.target_sess.run([tar_t.assign(self.tao * critic_tvs[i].eval(session=self.critic_sess) +
-                                               (1-self.tao) * tar_t.eval(session=self.target_sess)) for i, tar_t in enumerate(target_tvs)])
+                                               (1 - self.tao) * tar_t.eval(session=self.target_sess)) for i, tar_t in
+                                  enumerate(target_tvs)])
 
         return loss_mean, loss_std
 
     def get_contorl_variate(self, policy, observes, actions):
         """
-        observes should be in the shape (#samples,obs_dim)
-        :param policy:
-        :param observes:
-        :return:
+        Defintion is given in the Q-Prop paper; its purpose is to lower the variance of standard policy gradient
+        update targets (the general advantage estimation) using control variates provided by this Critic trained with off-policy
+        samples.
+        :param policy: a deterministic policy (e.g. mean of a parameterized gaussian)
+        :param observes: should be in the shape (#samples,obs_dim)
+        :return: control variates
         """
         expected_actions = policy.mean(observes)
         term_mul = actions - expected_actions
         with self.critic_sess.as_default():
             graph = self.critic_sess.graph
-            grads = tf.gradients(graph.get_tensor_by_name("value:0"), graph.get_tensor_by_name("act_ph:0"))[0].eval(feed_dict={
-                graph.get_tensor_by_name('obs_ph:0'): observes,
-                graph.get_tensor_by_name('act_ph:0'): expected_actions
-            })
+            grads = tf.gradients(graph.get_tensor_by_name("value:0"), graph.get_tensor_by_name("act_ph:0"))[0].eval(
+                feed_dict={
+                    graph.get_tensor_by_name('obs_ph:0'): observes,
+                    graph.get_tensor_by_name('act_ph:0'): expected_actions
+                })
             # grads are of shape (#samples, act_dim)
         # cv = np.diag(np.matmul(grads, term_mul.T))
         cv = np.sum(np.multiply(grads, term_mul), axis=1)
         return cv
 
     def get_taylor_eval(self, policy, observes):
+        """
+        The defintion is \nabla_a Q_w(s_t,a)|a=\mu_\theta(s_t) (from the paper)
+        :param policy: a deterministic policy (e.g. mean of a parameterized gaussian)
+        :param observes: with shape (#samples, obs_dim)
+        :return: in the shape (#samples, act_dim)
+        """
         expected_actions = policy.mean(observes)
         with self.critic_sess.as_default():
             graph = self.critic_sess.graph
-            grads = tf.gradients(graph.get_tensor_by_name("value:0"), graph.get_tensor_by_name("act_ph:0"))[0].eval(feed_dict={
-                graph.get_tensor_by_name('obs_ph:0'): observes,
-                graph.get_tensor_by_name('act_ph:0'): expected_actions
-            })
+            grads = tf.gradients(graph.get_tensor_by_name("value:0"), graph.get_tensor_by_name("act_ph:0"))[0].eval(
+                feed_dict={
+                    graph.get_tensor_by_name('obs_ph:0'): observes,
+                    graph.get_tensor_by_name('act_ph:0'): expected_actions
+                })
         return grads
 
 
 if __name__ == "__main__":
-    critic = DeterministicCritic(1,2,0.8,'./tmp/')
+    critic = DeterministicCritic(1, 2, 0.8, './tmp/')
     # critic.fit(None, None, None)
     with critic.critic_sess.as_default():
         graph = critic.critic_sess.graph
         grad = tf.gradients(graph.get_tensor_by_name("value:0"),
-                     graph.get_tensor_by_name("act_ph:0"))[0].eval(feed_dict={
+                            graph.get_tensor_by_name("act_ph:0"))[0].eval(feed_dict={
             graph.get_tensor_by_name('act_ph:0'): [[1, 2]],
             graph.get_tensor_by_name('obs_ph:0'): [[1]]
         })
