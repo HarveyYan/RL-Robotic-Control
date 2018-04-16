@@ -33,7 +33,6 @@ from ValueFunc.l2ValueFunc import l2TargetValueFunc
 from Critic.DetCritic import DeterministicCritic
 
 date_id = str(datetime.datetime.now()).split('.')[0].replace(':', '_').replace(' ', '_') + '/'
-OUTPATH = None
 
 class GracefulKiller:
     """ Gracefully exit program on CTRL-C """
@@ -375,7 +374,6 @@ if __name__ == "__main__":
 
     if not args.show and not args.resume:   # Training from scratch
         print('Training an agent anew, in environment: {}'.format(args.env_name))
-        global OUTPATH
         OUTPATH = './results/QPROP/' + args.env_name + '_' + args.message + '/'  + date_id
         if not os.path.exists(OUTPATH):
             os.makedirs(OUTPATH)
@@ -400,7 +398,6 @@ if __name__ == "__main__":
     else: # Resume training
         show_dir = args.show_dir
         print('Resume training {0} from {1}'.format(args.env_name, show_dir))
-        global OUTPATH
         OUTPATH = './results/QPROP/' + args.env_name + '_Resumed/' + date_id
         if not os.path.exists(OUTPATH):
             os.makedirs(OUTPATH)

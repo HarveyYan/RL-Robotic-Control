@@ -14,7 +14,7 @@ from sklearn.utils import shuffle
 
 # a reasonable amount of gpu acceleration
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.1)
+gpu_options = tf.GPUOptions()
 gpu_options.allow_growth = True
 
 class DeterministicCritic:

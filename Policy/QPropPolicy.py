@@ -8,7 +8,7 @@ import numpy as np
 import os
 
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
-gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.1)
+gpu_options = tf.GPUOptions()
 gpu_options.allow_growth = True
 
 class QPropPolicy:
@@ -141,6 +141,7 @@ class QPropPolicy:
         # self.sample = tf.clip_by_value(self.sample, self.action_space.low[0], self.action_space.high[0])
 
     def _loss(self):
+        # TODO, check if two losses are equal
         """
         Four loss terms:
             1) standard policy gradient
@@ -155,9 +156,15 @@ class QPropPolicy:
         self.ppo_loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
         """DDPG loss definition"""
         # ctrl_taylor_ph is of shape (#samples, act_dim), means is of shape (#samples, act_dim)
-        # loss -= tf.reduce_mean(tf.reduce_sum(tf.multiply(self.ctrl_taylor_ph, self.means), axis=1))
-        self.ddpg_loss = -tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
-        self.loss = self.ppo_loss + self.ddpg_loss
+        loss -= tf.reduce_mean(tf.reduce_sum(tf.multiply(self.ctrl_taylor_ph, self.means), axis=1))
+        # self.ddpg_loss = -tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
+
+        loss = -tf.reduce_mean(self.learning_signal_ph * tf.exp(self.logp - self.logp_old))
+        loss += tf.reduce_mean(self.beta_ph * self.kl)
+        loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
+        loss -= tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
+
+        self.loss = loss
 
     def _train(self):
         self.optimizer = tf.train.AdamOptimizer(self.lr_ph)
@@ -213,6 +220,8 @@ class QPropPolicy:
             # TODO: need to improve data pipeline - re-feeding data every epoch
             self.sess.run(self.train, feed_dict)
             ppo_loss, ddpg_loss, kl, entropy = self.sess.run([self.ppo_loss, self.ddpg_loss, self.kl, self.entropy], feed_dict)
+            loss = self.sess.run(self.loss, feed_dict)
+            assert(np.any(loss==(ppo_loss+ddpg_loss)))
             if kl > self.kl_target * 4:  # early stopping if D_KL diverges badly
                 break
 

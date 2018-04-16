@@ -1,2 +1,0 @@
-model_checkpoint_path: "value_func.pl"
-all_model_checkpoint_paths: "value_func.pl"
