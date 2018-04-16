@@ -1,21 +1,15 @@
 """
-Implementation of
-'Q-PROP: SAMPLE-EFFICIENT POLICY GRADIENT WITH AN OFF-POLICY CRITIC'
-which combines on-policy standard policy gradient methods with off-policy DDPG method.
+An initiative to experiment Q-PROP in a Roboschool environment,
+namely the RoboschoolHumanoidFlagrun-v1, which is more challenging than
+ordinary Mujoco environment.
 
-This specific implementation used Proximal Policy Optimization method (a conservative variant),
-in lieu of standard policy gradient method, for the Actor part.
-
-DDPG is used for the Q Critic.
-
-Special thanks to Patrick Coady (pat-coady.github.io).
-His implementation on PPO really helped me a lot.
+Agents are trained from scratch using Q-PROP algorithm.
 
 """
-
+import gym, roboschool
+from OpenGL import GLU
 import numpy as np
-import gym
-import matplotlib.pyplot as plt
+
 import os
 import datetime
 import argparse
@@ -25,9 +19,9 @@ import inspect
 import shutil
 import pickle
 from matplotlib import ticker
+import matplotlib.pyplot as plt
 
 from utils import Scaler, Buffer
-
 from Policy.QPropPolicy import QPropPolicy
 from ValueFunc.l2ValueFunc import l2TargetValueFunc
 from Critic.DetCritic import DeterministicCritic
@@ -49,11 +43,9 @@ class GracefulKiller:
 
 class Experiment:
 
-    def __init__(self, env_name, discount, num_iterations, lamb, animate, kl_target, **kwargs):
-        self.env_name = env_name
-        self.env = gym.make(env_name)
-        if env_name == "FetchReach-v0": # FetchReach env is a little bit different
-            self.env = gym.wrappers.FlattenDictWrapper(self.env, ['observation', 'desired_goal', 'achieved_goal'])
+    def __init__(self, discount, num_iterations, lamb, animate, kl_target, **kwargs):
+        self.env_name = 'RoboschoolHumanoidFlagrun-v1'
+        self.env = gym.make(self.env_name)
         gym.spaces.seed(1234) # for reproducibility
         self.obs_dim = self.env.observation_space.shape[0] + 1 # adding time step as feature
         self.act_dim = self.env.action_space.shape[0]
@@ -104,10 +96,7 @@ class Experiment:
             while not done:
                 obs = np.append(obs, [[step]], axis=1)  # add time step feature
                 action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
-                if self.env_name == "FetchReach-v0":
-                    obs_new, reward, done, _ = self.env.step(action.reshape(-1))
-                else:
-                    obs_new, reward, done, _ = self.env.step(action)
+                obs_new, reward, done, _ = self.env.step(action.reshape(-1))
                 observation.append(obs_new)
                 obs = obs_new.astype(np.float64).reshape((1, -1))
                 step += 1e-3
@@ -145,11 +134,7 @@ class Experiment:
 
             action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
             actions.append(action)
-            if self.env_name == "FetchReach-v0":
-                obs_new, reward, done, _ = self.env.step(action.reshape(-1))
-            else:
-                obs_new, reward, done, _ = self.env.step(action)
-
+            obs_new, reward, done, _ = self.env.step(action.reshape(-1))
             if not isinstance(reward, float):
                 reward = np.asscalar(reward)
             rewards.append(reward)
@@ -209,8 +194,6 @@ class Experiment:
             # E = len(trajectories)
             # num_samples = np.sum([len(t['rewards']) for t in trajectories])
             gradient_steps = np.sum([len(t['rewards']) for t in trajectories])
-            if self.env_name == "FetchReach-v0":
-                assert (gradient_steps == 20*50)
 
             """train critic"""
             # train all samples in the buffer, to the extreme
@@ -299,6 +282,7 @@ class Experiment:
 
         self.policy.save(OUTPATH)
         self.value_func.save(OUTPATH)
+        self.critic.save(OUTPATH)
         self.scaler.save(OUTPATH)
 
         plt.figure(figsize=(12,9))
@@ -361,7 +345,6 @@ class Experiment:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('env_name', type=str, help='OpenAI Gym environment name')
     parser.add_argument('-n', '--num_iterations', type=int, help='Number of episodes to run', default=1000)
     parser.add_argument('-d', '--discount', type=float, help='Discount factor', default=0.995)
     parser.add_argument('-k', '--kl_target', type=float, help='KL target', default=0.003)
@@ -374,9 +357,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if not args.show and not args.resume:   # Training from scratch
-        print('Training an agent anew, in environment: {}'.format(args.env_name))
+        print('Training an agent anew')
         global OUTPATH
-        OUTPATH = './results/QPROP/' + args.env_name + '_' + args.message + '/'  + date_id
+        OUTPATH = './results/QPROP/RoboschoolHumanoidFlagrun-v1_' + args.message + '/'  + date_id
         if not os.path.exists(OUTPATH):
             os.makedirs(OUTPATH)
         print("Save location:", OUTPATH)
@@ -385,7 +368,7 @@ if __name__ == "__main__":
         expr = Experiment(**vars(args))
         expr.run_expr()
     elif args.show: # Demonstrate a trained agent
-        print('Loading a trained agent: {}'.format(args.env_name))
+        print('Loading a trained agent')
         del args.message
         if args.show_dir is None:
             print('Needs to specify --show_dir when --show is active')
@@ -393,15 +376,18 @@ if __name__ == "__main__":
         if not args.animate:
             print('Suggest setting --animate to True')
         show_dir = args.show_dir # e.g. "./results/Hopper-v2/offline-PPO/2018-04-06_12_58_36/"
-        print('from', show_dir)
+        print('From', show_dir)
         del show_dir
         expr = Experiment(**vars(args))
         expr.demonstrate_agent(show_dir)
     else: # Resume training
+        if args.show_dir is None:
+            print('Needs to specify --show_dir when --show is active')
+            exit()
         show_dir = args.show_dir
-        print('Resume training {0} from {1}'.format(args.env_name, show_dir))
+        print('Resume training from {}'.format(show_dir))
         global OUTPATH
-        OUTPATH = './results/QPROP/' + args.env_name + '_Resumed/' + date_id
+        OUTPATH = './results/QPROP/RoboschoolHumanoidFlagrun-v1_Resumed/' + date_id
         if not os.path.exists(OUTPATH):
             os.makedirs(OUTPATH)
         print("Save location:", OUTPATH)
@@ -410,5 +396,3 @@ if __name__ == "__main__":
         expr = Experiment(**vars(args))
         expr.load_model(show_dir)
         expr.run_expr()
-
-

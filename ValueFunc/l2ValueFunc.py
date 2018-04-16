@@ -93,7 +93,7 @@ class l2TargetValueFunc:
         self.saver.save(self.sess, saveto + 'value_func/value_func.pl')
 
     def load(self, load_from):
-        self.saver.restore(self.sess, load_from)
+        self.saver.restore(self.sess, load_from+"value_func.pl")
 
     def predict(self, obs):
         feed_dict = {self.obs_ph: obs}

@@ -74,11 +74,6 @@ class DeterministicCritic:
             init = tf.global_variables_initializer()
         return g, init, saver
 
-    # def predict(self, obs, act):
-    #     feed_dict = {self.obs_ph: obs, self.act_ph: act}
-    #     val = self.sess.run(self.value, feed_dict=feed_dict)
-    #     return np.squeeze(val)
-
     def fit(self, policy, buffer, epochs, num_samples, batch_size=64):
         """
         DDPG training style, fitted with off-policy TD learning as in 'Lillicrap et al., 2016'.
@@ -234,6 +229,16 @@ class DeterministicCritic:
                     graph.get_tensor_by_name('act_ph:0'): expected_actions
                 })
         return grads
+
+    def save(self, saveto):
+        if not os.path.exists(saveto + 'critic'):
+            os.makedirs(saveto + 'critic')
+        self.critic_saver.save(self.critic_sess, saveto + 'critic/critic.pl')
+        self.target_saver.save(self.target_sess, saveto + 'critic/target_critic.pl')
+
+    def load(self, load_from):
+        self.critic_saver.restore(self.critic_sess, load_from+'critic.pl')
+        self.target_saver.restore(self.target_sess, load_from+'target_critic.pl')
 
 
 if __name__ == "__main__":
