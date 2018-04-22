@@ -51,7 +51,7 @@ class Experiment:
     def __init__(self, env_name, discount, num_iterations, lamb, animate, kl_target, **kwargs):
         self.env_name = env_name
         self.env = gym.make(env_name)
-        if env_name == "FetchReach-v0": # FetchReach env is a little bit different
+        if env_name.startswith('Fetch'): # FetchReach env is a little bit different
             self.env = gym.wrappers.FlattenDictWrapper(self.env, ['observation', 'desired_goal', 'achieved_goal'])
         gym.spaces.seed(1234) # for reproducibility
         self.obs_dim = self.env.observation_space.shape[0] + 1 # adding time step as feature
@@ -103,7 +103,7 @@ class Experiment:
             while not done:
                 obs = np.append(obs, [[step]], axis=1)  # add time step feature
                 action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
-                if self.env_name == "FetchReach-v0":
+                if self.env_name.startswith('Fetch'):
                     obs_new, reward, done, _ = self.env.step(action.reshape(-1))
                 else:
                     obs_new, reward, done, _ = self.env.step(action)
@@ -144,7 +144,7 @@ class Experiment:
 
             action = self.policy.get_sample(obs).reshape((1, -1)).astype(np.float64)
             actions.append(action)
-            if self.env_name == "FetchReach-v0":
+            if self.env_name.startswith('Fetch'):
                 obs_new, reward, done, _ = self.env.step(action.reshape(-1))
             else:
                 obs_new, reward, done, _ = self.env.step(action)
@@ -208,7 +208,7 @@ class Experiment:
             # E = len(trajectories)
             # num_samples = np.sum([len(t['rewards']) for t in trajectories])
             gradient_steps = np.sum([len(t['rewards']) for t in trajectories])
-            if self.env_name == "FetchReach-v0":
+            if self.env_name.startswith('Fetch'):
                 assert (gradient_steps == 20*50)
 
             """train critic"""

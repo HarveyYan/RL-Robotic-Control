@@ -74,7 +74,7 @@ class DeterministicCritic:
             init = tf.global_variables_initializer()
         return g, init, saver
 
-    def fit(self, policy, buffer, epochs, num_samples, batch_size=64):
+    def fit(self, policy, buffer, epochs, num_samples, batch_size=256):
         """
         DDPG training style, fitted with off-policy TD learning as in 'Lillicrap et al., 2016'.
         Take as many samples indicated by the num_samples argument, and perform mini-batch gradient descent
@@ -199,7 +199,7 @@ class DeterministicCritic:
         :param observes: should be in the shape (#samples,obs_dim)
         :return: control variates
         """
-        expected_actions = policy.mean(observes)
+        expected_actions = policy.get_sample(observes, expected=True)
         term_mul = actions - expected_actions
         with self.critic_sess.as_default():
             graph = self.critic_sess.graph
@@ -220,7 +220,7 @@ class DeterministicCritic:
         :param observes: with shape (#samples, obs_dim)
         :return: in the shape (#samples, act_dim)
         """
-        expected_actions = policy.mean(observes)
+        expected_actions = policy.get_sample(observes, expected=True)
         with self.critic_sess.as_default():
             graph = self.critic_sess.graph
             grads = tf.gradients(graph.get_tensor_by_name("value:0"), graph.get_tensor_by_name("act_ph:0"))[0].eval(

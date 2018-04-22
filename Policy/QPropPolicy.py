@@ -1,5 +1,5 @@
 """
-without eligibility trace, this one is almost identical to the reference policy implementation.
+without eligibility trace, this one is almost identical to the referenced policy implementation.
 """
 
 import tensorflow as tf
@@ -156,19 +156,12 @@ class QPropPolicy:
         self.ppo_loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
         """DDPG loss definition"""
         # ctrl_taylor_ph is of shape (#samples, act_dim), means is of shape (#samples, act_dim)
-        loss -= tf.reduce_mean(tf.reduce_sum(tf.multiply(self.ctrl_taylor_ph, self.means), axis=1))
         # self.ddpg_loss = -tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
-
-        loss = -tf.reduce_mean(self.learning_signal_ph * tf.exp(self.logp - self.logp_old))
-        loss += tf.reduce_mean(self.beta_ph * self.kl)
-        loss += self.eta_ph * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
-        loss -= tf.reduce_mean(tf.diag_part(tf.matmul(self.ctrl_taylor_ph, self.means, transpose_b=True)))
-
-        self.loss = loss
+        self.ddpg_loss = -tf.reduce_mean(tf.reduce_sum(tf.multiply(self.ctrl_taylor_ph, self.means), axis=1))
 
     def _train(self):
         self.optimizer = tf.train.AdamOptimizer(self.lr_ph)
-        self.train = self.optimizer.minimize(self.loss)
+        self.train = self.optimizer.minimize(self.ppo_loss+self.ddpg_loss)
 
     def _init_session(self):
         self.sess = tf.Session(graph=self.g, config=tf.ConfigProto(gpu_options=gpu_options))
@@ -183,14 +176,17 @@ class QPropPolicy:
             target_tvs = tf.trainable_variables()
             self.target_sess.run([tar_t.assign(policy_tvs[i].eval(session=self.sess)) for i, tar_t in enumerate(target_tvs)])
 
-    def get_sample(self, obs):
+    def get_sample(self, obs, expected=False):
         """
         Sample an action from the stochastic policy.
         :param obs:
         :return:
         """
         feed_dict = {self.obs_ph: obs}
-        return self.sess.run(self.sample, feed_dict=feed_dict)
+        if expected:
+            return self.sess.run(self.means, feed_dict=feed_dict)
+        else:
+            return self.sess.run(self.sample, feed_dict=feed_dict)
 
     def mean(self, obs):
         """
@@ -220,8 +216,6 @@ class QPropPolicy:
             # TODO: need to improve data pipeline - re-feeding data every epoch
             self.sess.run(self.train, feed_dict)
             ppo_loss, ddpg_loss, kl, entropy = self.sess.run([self.ppo_loss, self.ddpg_loss, self.kl, self.entropy], feed_dict)
-            loss = self.sess.run(self.loss, feed_dict)
-            assert(np.any(loss==(ppo_loss+ddpg_loss)))
             if kl > self.kl_target * 4:  # early stopping if D_KL diverges badly
                 break
 
@@ -244,7 +238,9 @@ class QPropPolicy:
             self.target_sess.run([tar_t.assign(self.tao * policy_tvs[i].eval(session=self.sess) +
                                                (1-self.tao) * tar_t.eval(session=self.target_sess)) for i, tar_t in enumerate(target_tvs)])
 
+        # return ppo_loss, ddpg_loss, kl, entropy, self.beta
         return ppo_loss, ddpg_loss, kl, entropy, self.beta
+
 
     def save(self, saveto):
         if not os.path.exists(saveto + 'policy'):

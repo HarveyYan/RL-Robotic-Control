@@ -1,0 +1,2 @@
+model_checkpoint_path: "target_policy.pl"
+all_model_checkpoint_paths: "target_policy.pl"
