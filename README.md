@@ -21,6 +21,12 @@ It's not surprising that the Q-PROP algorithms have almost the same performance 
 * Hopper-v2 is fairly simple.
 * **Most importantly**, I'm not yet able to guarantee the correctness of this reproduced algorithm...
 
+But sometimes, Q-PROP (with target networks) can have very impressive and contrastive performance in the Hopper-v2 environment, as shown in the figure below. 
+
+![placeholder](graph/impressive_hp_plot.png)
+
+Reinforcement learning algorithms have a lot of variance, even with control variate as employed in Q-PROP.
+
 ## FetchReach-v0 environment
 
 FetchReach-v0 is slightly more complicated due to its limitation of short time steps per episode. Since Q-PROP has made of experience replay with determinstic off-policy learning, it is able to solve the task substantially faster.

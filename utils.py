@@ -183,6 +183,14 @@ if __name__ == "__main__":
                       ['Q-PROP', 'Q-PROP with target policy', 'PPO'])
     plotter.plot(limit_episodes=100, saveto='./graph/hp_plot.png') # per log entry normally summarizes 20 episodes
 
+    # Hopper-v2 comparison between Q-PROP and PPO, a good comparison
+    plotter = Plotter(['./results/QPROP/Hopper-v2_Default/2018-04-13_10_54_18_2000episodes/log.csv',
+                       './results/QPROP/Hopper-v2_expr_target_policy/2018-04-22_00_11_09_good_results/log.csv',
+                       './results/offline-PPO/Hopper-v2_Default/2018-04-12_18_19_01_10000episodes/log.csv'], ['steps', 'rewards'],
+                      ['Q-PROP', 'Q-PROP with target policy', 'PPO'])
+    plotter.plot(limit_episodes=50, saveto='./graph/impressive_hp_plot.png') # per log entry normally summarizes 20 episodes
+
+
     # FetchReach-v0 comparison between Q-PROP and PPO
     plotter = Plotter(['./results/QPROP/FetchReach-v0_Default/2018-04-11_17_05_54/log.csv',
                        './results/QPROP/FetchReach-v0_expr_target_policy_lr_1e-3/2018-04-13_19_10_13/log.csv',
